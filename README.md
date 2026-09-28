@@ -100,6 +100,7 @@ WarehouseRoboticsInventoryTrackingLogica3/
 ├── dashboard_unit1.py     # dashboard de la Unidad 1
 ├── dashboard_unit2.py     # dashboard de la Unidad 2
 ├── main.py                # selector de dashboards
+├── tests/                 # pruebas unitarias (python -m unittest discover -s tests)
 ├── requirements.txt
 └── README.md
 ```
@@ -112,7 +113,35 @@ Cada tarea se puede correr por separado desde la raíz del proyecto.
 
 | Tarea | Archivo | Comando |
 | --- | --- | --- |
+| Task 2 — Randomized Algorithm | `unit1/RandomizedAlgorithm.py` | `python unit1/RandomizedAlgorithm.py` |
 | Task 4 — Hash Table Operations | `unit1/HashTableOperations.py` | `python unit1/HashTableOperations.py` |
+
+La Task 2 usa **reservoir sampling** (Algoritmo R) para estimar qué fracción de los SKUs está
+en bajo stock sin guardar todo el stream de scans, y compara la estimación contra el conteo
+exacto. Recorre los scans una sola vez y mantiene un reservorio de `k` scans; al final cada
+scan quedó en la muestra con la misma probabilidad `k/n`, así que la muestra es uniforme.
+
+- **Qué estima:** (1) la fracción de *scans* en bajo stock, con su error estándar (con
+  corrección por población finita) y un intervalo de confianza del 95 %; (2) la fracción de
+  *SKUs* en bajo stock, tomando el scan más reciente de cada SKU que apareció en la muestra.
+  La segunda puede tener sesgo, porque los SKUs que más se escanean tienen más probabilidad
+  de entrar a la muestra.
+- **Valor exacto de referencia:** se recorre todo el dataset y el último scan de cada SKU
+  se toma como su estado actual.
+- **Experimento:** tamaños de muestra `k` = 100, 250, 500, 1000 y 2000, con 200 repeticiones
+  cada uno (semillas distintas). Imprime el conteo exacto, el error absoluto promedio, la
+  desviación empírica contra la teórica, el porcentaje de veces que el intervalo del 95 %
+  contiene el valor real, el sesgo de la estimación por SKU y el tiempo de una pasada.
+- **Resultado con el dataset actual** (10.000 scans, 1.900 SKUs distintos): el conteo exacto
+  es 12,41 % de scans en bajo stock y 220 de 1.900 SKUs (11,58 %). Con `k` = 1000 el error
+  absoluto promedio es 0,008 y la desviación empírica (0,0100) coincide con la teórica
+  (0,0099). El sesgo de la estimación por SKU baja de +0,010 con `k` = 100 a casi 0 con
+  `k` = 2000. Muestrear no es más rápido que el conteo exacto en Python (unos 6 ms contra
+  4 ms); la ventaja es usar memoria O(k) y poder trabajar sobre un stream que no se puede
+  guardar.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `reservoir_sample`,
+  `conteo_exacto`, `estimar` y `experimento`.
+- **Pruebas:** `python -m unittest tests.test_randomized_algorithm -v`
 
 La Task 4 construye una tabla hash con clave `bin_location` (100 buckets por defecto) y
 compara chaining contra Power of Two Choices. Imprime carga máxima y mínima, desviación
@@ -178,6 +207,7 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
 
 - [x] Generador de datos
 - [ ] Unit 1 — tareas
+  - [x] Task 2 — Randomized Algorithm
   - [x] Task 4 — Hash Table Operations
   - [ ] Demás tareas
 - [ ] Unit 2 — tareas
