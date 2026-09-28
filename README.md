@@ -100,6 +100,7 @@ WarehouseRoboticsInventoryTrackingLogica3/
 ├── dashboard_unit1.py     # dashboard de la Unidad 1
 ├── dashboard_unit2.py     # dashboard de la Unidad 2
 ├── main.py                # selector de dashboards
+├── tests/                 # pruebas unitarias (python -m unittest discover -s tests)
 ├── requirements.txt
 └── README.md
 ```
@@ -113,11 +114,43 @@ Cada tarea se puede correr por separado desde la raíz del proyecto.
 | Tarea | Archivo | Comando |
 | --- | --- | --- |
 | Task 4 — Hash Table Operations | `unit1/HashTableOperations.py` | `python unit1/HashTableOperations.py` |
+| Task 3 — Universal Hashing | `unit1/UniversalHashing.py` | `python unit1/UniversalHashing.py` |
 
 La Task 4 construye una tabla hash con clave `bin_location` (100 buckets por defecto) y
 compara chaining contra Power of Two Choices. Imprime carga máxima y mínima, desviación
 estándar, buckets vacíos y registros revisados por búsqueda, y repite el experimento 30 veces
 con distintas funciones hash para promediar la carga máxima.
+
+La Task 3 aplica **hash universal** sobre `sku` para armar el índice de búsqueda rápida del
+sistema de reabastecimiento y mide cuántas colisiones produce. La función es de la familia
+Carter-Wegman, `h(x) = ((a·x + b) mod P) mod m`, con `P = 2^61 − 1` y `a`, `b` aleatorios (la
+misma familia que usa `FuncionHash` en la Task 4). Para dos SKUs distintos la probabilidad de
+colisión es a lo sumo `1/m`, así que con `n` SKUs distintos se esperan como máximo `C(n,2)/m`
+pares en colisión, sin importar cómo sean los SKUs.
+
+- **Índice:** `IndiceHash` guarda, con chaining, la lista de posiciones de los scans de cada
+  SKU. Buscar un SKU solo revisa los SKUs de su bucket.
+- **Estudio de colisiones:** para tablas de 512, 1024, 2003, 2048, 4096 y 4099 buckets mide
+  los pares de SKUs distintos que caen en el mismo bucket y la carga del bucket más lleno. La
+  familia universal se promedia sobre 300 elecciones de `(a, b)` y se compara contra la cota
+  teórica `C(n,2)/m` y contra dos funciones ingenuas: suma de los códigos de los caracteres y
+  clave entera mod `m`.
+- **Benchmark de búsqueda:** construye el índice con los 10.000 scans (2003 buckets) y compara
+  buscar cada SKU con el índice contra recorrer todos los scans. Verifica que ambos devuelvan
+  las mismas posiciones.
+- **Resultado con el dataset actual** (10.000 scans, 1.900 SKUs distintos): el promedio de
+  pares en colisión de la familia universal sigue la cota (por ejemplo 894 contra 901 con
+  `m` = 2003, y 3.493 contra 3.524 con `m` = 512). La suma de caracteres es inutilizable:
+  produce 44.706 pares y un bucket con 70 SKUs sin importar `m`, porque solo genera 82 valores
+  distintos. Clave mod `m` reparte mejor que el promedio universal en estos datos (729 pares con
+  `m` = 2003), pero eso depende de la forma de los SKUs y no está garantizado; la ventaja de la
+  familia universal es la cota para cualquier conjunto de SKUs. El índice con 2003 buckets
+  queda con factor de carga 0,95, cadena máxima de 4 y unos 2 SKUs revisados por búsqueda;
+  busca en unos 3 µs contra unos 1.700 µs de la búsqueda lineal (unas 650 veces más rápido; los
+  tiempos varían según el equipo).
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `FuncionHashUniversal`,
+  `IndiceHash`, `tabla_colisiones` y `benchmark_busqueda`.
+- **Pruebas:** `python -m unittest tests.test_universal_hashing -v`
 
 *(pendiente — comandos de las demás tareas de `unit1/`)*
 
@@ -179,6 +212,7 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
 - [x] Generador de datos
 - [ ] Unit 1 — tareas
   - [x] Task 4 — Hash Table Operations
+  - [x] Task 3 — Universal Hashing
   - [ ] Demás tareas
 - [ ] Unit 2 — tareas
   - [x] Task 1 — Stream Model & Query Design
