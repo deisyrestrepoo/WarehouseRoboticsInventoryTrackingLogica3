@@ -53,6 +53,8 @@ Flajolet-Martin y momentos de frecuencia).
    pip install -r requirements.txt
    ```
 
+   Las dependencias principales son `streamlit`, `pandas` y `plotly`.
+
 > Todos los comandos siguientes se ejecutan desde la raíz del proyecto
 > (la carpeta `WarehouseRoboticsInventoryTrackingLogica3`).
 
@@ -104,6 +106,64 @@ WarehouseRoboticsInventoryTrackingLogica3/
 
 ## Ejecutar las tareas
 
+Cada tarea se puede correr por separado desde la raíz del proyecto.
+
+**Unit 1**
+
+| Tarea | Archivo | Comando |
+| --- | --- | --- |
+| Task 4 — Hash Table Operations | `unit1/HashTableOperations.py` | `python unit1/HashTableOperations.py` |
+
+La Task 4 construye una tabla hash con clave `bin_location` (100 buckets por defecto) y
+compara chaining contra Power of Two Choices. Imprime carga máxima y mínima, desviación
+estándar, buckets vacíos y registros revisados por búsqueda, y repite el experimento 30 veces
+con distintas funciones hash para promediar la carga máxima.
+
+*(pendiente — comandos de las demás tareas de `unit1/`)*
+
+**Unit 2**
+
+| Tarea | Archivo | Comando |
+| --- | --- | --- |
+| Task 1 — Stream Model & Query Design | `unit2/StreamModelQueryDesign.py` | `python unit2/StreamModelQueryDesign.py` |
+| Task 2 — Bloom Filter | `unit2/BloomFilter.py` | `python unit2/BloomFilter.py` |
+
+La Task 1 simula el stream de scans y responde dos consultas: SKUs en bajo stock por
+pasillo en los últimos 300 scans (ventana deslizante) y SKUs distintos vistos en el día
+(conteo exacto, usado luego como referencia para Flajolet-Martin).
+
+La Task 2 arma un filtro de Bloom con los SKUs ya alertados en bajo stock, para no generar
+tickets de reabastecimiento duplicados. Imprime la tasa de falsos positivos empírica contra
+la teórica, y un barrido con distintos tamaños de filtro para ver cómo se acercan ambas.
+
+*(pendiente — comandos de las demás tareas de `unit2/`)*
+
+## Ejecutar el dashboard
+
+Dashboard de la Unit 1 (por ahora con el Panel A):
+
+```bash
+streamlit run dashboard_unit1.py
+```
+
+Se abre en el navegador. El Panel A muestra la cantidad de scans por bucket con chaining y con
+Power of Two Choices, y un deslizador permite cambiar el número de buckets. El Panel B y el
+Panel C se agregan cuando estén listas sus tareas.
+
+Dashboard de la Unit 2 (Panel A y Panel B completos, Panel C con la parte de la Task 1;
+falta lo de Flajolet-Martin y F_k):
+
+```bash
+streamlit run dashboard_unit2.py
+```
+
+El Panel A muestra la tasa de falsos positivos del Bloom filter a medida que avanza el turno,
+con controles para ajustar el tamaño del filtro. El Panel B grafica el conteo real de SKUs
+distintos (falta superponer la estimación de Flajolet-Martin). El Panel C es un tablero de
+alertas de bajo stock en vivo, ordenado por urgencia, con un slider para moverse por el stream
+(falta agregar la tabla de F_k).
+
+Selector que reúne los dos dashboards en un solo lugar, con un menú en la barra lateral:
 *(pendiente — se agrega el comando de cada tarea de `unit1/` y `unit2/` cuando estén listas)*
 
 ## Ejecutar el dashboard
@@ -123,6 +183,18 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
 
 - [x] Generador de datos
 - [ ] Unit 1 — tareas
+  - [x] Task 4 — Hash Table Operations
+  - [ ] Demás tareas
+- [ ] Unit 2 — tareas
+  - [x] Task 1 — Stream Model & Query Design
+  - [x] Task 2 — Bloom Filter
+  - [ ] Demás tareas
+- [ ] Dashboards
+  - [x] Unit 1 — Panel A
+  - [ ] Unit 1 — Panel B y Panel C
+  - [x] Unit 2 — Panel A y Panel B
+  - [ ] Unit 2 — Panel C (falta F_k)
+  - [x] Selector `main.py`
 - [ ] Unit 2 — tareas
 - [ ] Dashboards
 - [ ] Informe
