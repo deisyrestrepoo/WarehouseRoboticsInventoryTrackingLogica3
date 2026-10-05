@@ -164,6 +164,11 @@ alertas de bajo stock en vivo, ordenado por urgencia, con un slider para moverse
 (falta agregar la tabla de F_k).
 
 Selector que reúne los dos dashboards en un solo lugar, con un menú en la barra lateral:
+*(pendiente — se agrega el comando de cada tarea de `unit1/` y `unit2/` cuando estén listas)*
+
+## Ejecutar el dashboard
+
+*(pendiente — se confirma cuando `dashboard_unit1.py` y `dashboard_unit2.py` estén listos)*
 
 ```bash
 streamlit run main.py
@@ -190,4 +195,6 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
   - [x] Unit 2 — Panel A y Panel B
   - [ ] Unit 2 — Panel C (falta F_k)
   - [x] Selector `main.py`
+- [ ] Unit 2 — tareas
+- [ ] Dashboards
 - [ ] Informe
