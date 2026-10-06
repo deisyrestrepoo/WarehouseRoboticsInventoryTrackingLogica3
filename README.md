@@ -113,8 +113,92 @@ Cada tarea se puede correr por separado desde la raíz del proyecto.
 
 | Tarea | Archivo | Comando |
 | --- | --- | --- |
+| Task 1 — Big Data Context | `unit1/BigDataContext.py` | `python unit1/BigDataContext.py` |
 | Task 4 — Hash Table Operations | `unit1/HashTableOperations.py` | `python unit1/HashTableOperations.py` |
 | Task 5 — Probability Analysis | `unit1/ProbabilityAnalysis.py` | `python unit1/ProbabilityAnalysis.py` |
+
+La Task 1 pone el escenario en contexto de Big Data: estima cuántos scans por segundo genera la
+flota de robots y cuánto almacenamiento necesita el sistema, hoy y con un crecimiento de 10x
+de la red de bodegas.
+
+- **Throughput:** `(scans − 1) / duración del dataset`, porque `n` scans delimitan `n − 1`
+  intervalos. También lo reparte por robot.
+- **Almacenamiento:** mide los bytes promedio de un scan serializado como JSON compacto (UTF-8) y
+  proyecta `throughput × segundos × bytes por registro` a un día y a un año (GB = 2^30 bytes).
+- **Crecimiento 10x:** se multiplican por 10 los robots y, con ellos, el throughput y el
+  almacenamiento (cada robot conserva su ritmo de scans). La proyección es lineal.
+- **Resultado con el dataset actual** (10.000 scans, 20 robots): 1,00 scans/seg en total
+  (0,05 por robot) y 189 bytes por registro. Hoy son 86.400 scans y unos 0,015 GB por día
+  (31.536.000 scans y 5,5 GB por año). Con 10x son 10 scans/seg con 200 robots, 864.000 scans y
+  unos 0,15 GB por día (315.360.000 scans y 55,4 GB por año).
+- **Cómo leer el resultado:** el generador espacia los scans un segundo, así que la tasa total de
+  1,0 scans/seg sale de los timestamps sintéticos y no es una medición de una flota real. Los
+  bytes cuentan los 9 campos del dataset (los 7 del escenario más `stream_seq` y `aisle`) y no
+  incluyen índices, réplicas ni compresión, por lo que el almacenamiento real sería mayor.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `tasa_scans_por_segundo`,
+  `bytes_por_registro`, `proyectar` y `analisis`.
+- **Pruebas:** `python -m unittest tests.test_big_data_context -v`
+| Task 2 — Randomized Algorithm | `unit1/RandomizedAlgorithm.py` | `python unit1/RandomizedAlgorithm.py` |
+| Task 4 — Hash Table Operations | `unit1/HashTableOperations.py` | `python unit1/HashTableOperations.py` |
+| Task 3 — Universal Hashing | `unit1/UniversalHashing.py` | `python unit1/UniversalHashing.py` |
+
+La Task 2 usa **reservoir sampling** (Algoritmo R) para estimar qué fracción de los SKUs está
+en bajo stock sin guardar todo el stream de scans, y compara la estimación contra el conteo
+exacto. Recorre los scans una sola vez y mantiene un reservorio de `k` scans; al final cada
+scan quedó en la muestra con la misma probabilidad `k/n`, así que la muestra es uniforme.
+
+- **Qué estima:** (1) la fracción de *scans* en bajo stock, con su error estándar (con
+  corrección por población finita) y un intervalo de confianza del 95 %; (2) la fracción de
+  *SKUs* en bajo stock, tomando el scan más reciente de cada SKU que apareció en la muestra.
+  La segunda puede tener sesgo, porque los SKUs que más se escanean tienen más probabilidad
+  de entrar a la muestra.
+- **Valor exacto de referencia:** se recorre todo el dataset y el último scan de cada SKU
+  se toma como su estado actual.
+- **Experimento:** tamaños de muestra `k` = 100, 250, 500, 1000 y 2000, con 200 repeticiones
+  cada uno (semillas distintas). Imprime el conteo exacto, el error absoluto promedio, la
+  desviación empírica contra la teórica, el porcentaje de veces que el intervalo del 95 %
+  contiene el valor real, el sesgo de la estimación por SKU y el tiempo de una pasada.
+- **Resultado con el dataset actual** (10.000 scans, 1.900 SKUs distintos): el conteo exacto
+  es 12,41 % de scans en bajo stock y 220 de 1.900 SKUs (11,58 %). Con `k` = 1000 el error
+  absoluto promedio es 0,008 y la desviación empírica (0,0100) coincide con la teórica
+  (0,0099). El sesgo de la estimación por SKU baja de +0,010 con `k` = 100 a casi 0 con
+  `k` = 2000. Muestrear no es más rápido que el conteo exacto en Python (unos 6 ms contra
+  4 ms); la ventaja es usar memoria O(k) y poder trabajar sobre un stream que no se puede
+  guardar.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `reservoir_sample`,
+  `conteo_exacto`, `estimar` y `experimento`.
+- **Pruebas:** `python -m unittest tests.test_randomized_algorithm -v`
+
+La Task 3 aplica **hash universal** sobre `sku` para armar el índice de búsqueda rápida del
+sistema de reabastecimiento y mide cuántas colisiones produce. La función es de la familia
+Carter-Wegman, `h(x) = ((a·x + b) mod P) mod m`, con `P = 2^61 − 1` y `a`, `b` aleatorios (la
+misma familia que usa `FuncionHash` en la Task 4). Para dos SKUs distintos la probabilidad de
+colisión es a lo sumo `1/m`, así que con `n` SKUs distintos se esperan como máximo `C(n,2)/m`
+pares en colisión, sin importar cómo sean los SKUs.
+
+- **Índice:** `IndiceHash` guarda, con chaining, la lista de posiciones de los scans de cada
+  SKU. Buscar un SKU solo revisa los SKUs de su bucket.
+- **Estudio de colisiones:** para tablas de 512, 1024, 2003, 2048, 4096 y 4099 buckets mide
+  los pares de SKUs distintos que caen en el mismo bucket y la carga del bucket más lleno. La
+  familia universal se promedia sobre 300 elecciones de `(a, b)` y se compara contra la cota
+  teórica `C(n,2)/m` y contra dos funciones ingenuas: suma de los códigos de los caracteres y
+  clave entera mod `m`.
+- **Benchmark de búsqueda:** construye el índice con los 10.000 scans (2003 buckets) y compara
+  buscar cada SKU con el índice contra recorrer todos los scans. Verifica que ambos devuelvan
+  las mismas posiciones.
+- **Resultado con el dataset actual** (10.000 scans, 1.900 SKUs distintos): el promedio de
+  pares en colisión de la familia universal sigue la cota (por ejemplo 894 contra 901 con
+  `m` = 2003, y 3.493 contra 3.524 con `m` = 512). La suma de caracteres es inutilizable:
+  produce 44.706 pares y un bucket con 70 SKUs sin importar `m`, porque solo genera 82 valores
+  distintos. Clave mod `m` reparte mejor que el promedio universal en estos datos (729 pares con
+  `m` = 2003), pero eso depende de la forma de los SKUs y no está garantizado; la ventaja de la
+  familia universal es la cota para cualquier conjunto de SKUs. El índice con 2003 buckets
+  queda con factor de carga 0,95, cadena máxima de 4 y unos 2 SKUs revisados por búsqueda;
+  busca en unos 3 µs contra unos 1.700 µs de la búsqueda lineal (unas 650 veces más rápido; los
+  tiempos varían según el equipo).
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `FuncionHashUniversal`,
+  `IndiceHash`, `tabla_colisiones` y `benchmark_busqueda`.
+- **Pruebas:** `python -m unittest tests.test_universal_hashing -v`
 
 La Task 4 construye una tabla hash con clave `bin_location` (100 buckets por defecto) y
 compara chaining contra Power of Two Choices. Imprime carga máxima y mínima, desviación
@@ -146,6 +230,7 @@ scans con `is_low_stock` y `p̂` es la fracción en una muestra uniforme de `n` 
 - **Funciones reutilizables** (por ejemplo, para el dashboard): `tasa_real`, `cota_chebyshev`,
   `muestra_minima`, `probabilidad_empirica` y `analisis`.
 - **Pruebas:** `python -m unittest tests.test_probability_analysis -v`
+
 
 *(pendiente — comandos de las demás tareas de `unit1/`)*
 
@@ -211,7 +296,10 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
 
 - [x] Generador de datos
 - [ ] Unit 1 — tareas
+  - [x] Task 1 — Big Data Context
   - [x] Task 4 — Hash Table Operations
+  - [x] Task 2 — Randomized Algorithm
+  - [x] Task 3 — Universal Hashing
   - [x] Task 5 — Probability Analysis
   - [ ] Demás tareas
 - [ ] Unit 2 — tareas
