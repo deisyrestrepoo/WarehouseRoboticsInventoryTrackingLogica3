@@ -4,8 +4,10 @@ Práctica de Lógica y Representación 3 — Grupo 9.
 
 Sistema simulado de robots que escanean bins de inventario en un almacén.
 Incluye la Unidad 1 (análisis batch: algoritmos aleatorizados, hashing y
-probabilidad) y la Unidad 2 (procesamiento de streams: Bloom filter,
-Flajolet-Martin y momentos de frecuencia).
+probabilidad), la Unidad 2 (procesamiento de streams: Bloom filter,
+Flajolet-Martin y momentos de frecuencia) y la Unidad 3 (cadenas de Markov
+sobre el grafo de movimientos de los robots: clasificación de estados,
+distribución estacionaria, PageRank, random walk y 2-SAT).
 
 ## Integrantes
 
@@ -94,11 +96,13 @@ Decisiones del generador:
 
 ```text
 WarehouseRoboticsInventoryTrackingLogica3/
-├── data/                  # generador de datos y dataset generado
+├── data/                  # generador de datos, dataset y grafo de movimientos (edges.json)
 ├── unit1/                 # tareas batch (Big Data, hashing, tabla hash, Chebyshev)
 ├── unit2/                 # tareas de streaming (Bloom Filter, Flajolet-Martin, F_k)
+├── unit3/                 # tareas de cadenas de Markov (DTMC, estacionaria, PageRank, random walk, 2-SAT)
 ├── dashboard_unit1.py     # dashboard de la Unidad 1
 ├── dashboard_unit2.py     # dashboard de la Unidad 2
+├── dashboard_unit3.py     # dashboard de la Unidad 3
 ├── main.py                # selector de dashboards
 ├── tests/                 # pruebas unitarias (python -m unittest discover -s tests)
 ├── requirements.txt
@@ -114,6 +118,8 @@ Cada tarea se puede correr por separado desde la raíz del proyecto.
 | Tarea | Archivo | Comando |
 | --- | --- | --- |
 | Task 1 — Big Data Context | `unit1/BigDataContext.py` | `python unit1/BigDataContext.py` |
+| Task 2 — Randomized Algorithm | `unit1/RandomizedAlgorithm.py` | `python unit1/RandomizedAlgorithm.py` |
+| Task 3 — Universal Hashing | `unit1/UniversalHashing.py` | `python unit1/UniversalHashing.py` |
 | Task 4 — Hash Table Operations | `unit1/HashTableOperations.py` | `python unit1/HashTableOperations.py` |
 | Task 5 — Probability Analysis | `unit1/ProbabilityAnalysis.py` | `python unit1/ProbabilityAnalysis.py` |
 
@@ -138,9 +144,6 @@ de la red de bodegas.
 - **Funciones reutilizables** (por ejemplo, para el dashboard): `tasa_scans_por_segundo`,
   `bytes_por_registro`, `proyectar` y `analisis`.
 - **Pruebas:** `python -m unittest tests.test_big_data_context -v`
-| Task 2 — Randomized Algorithm | `unit1/RandomizedAlgorithm.py` | `python unit1/RandomizedAlgorithm.py` |
-| Task 4 — Hash Table Operations | `unit1/HashTableOperations.py` | `python unit1/HashTableOperations.py` |
-| Task 3 — Universal Hashing | `unit1/UniversalHashing.py` | `python unit1/UniversalHashing.py` |
 
 La Task 2 usa **reservoir sampling** (Algoritmo R) para estimar qué fracción de los SKUs está
 en bajo stock sin guardar todo el stream de scans, y compara la estimación contra el conteo
@@ -231,9 +234,6 @@ scans con `is_low_stock` y `p̂` es la fracción en una muestra uniforme de `n` 
   `muestra_minima`, `probabilidad_empirica` y `analisis`.
 - **Pruebas:** `python -m unittest tests.test_probability_analysis -v`
 
-
-*(pendiente — comandos de las demás tareas de `unit1/`)*
-
 **Unit 2**
 
 | Tarea | Archivo | Comando |
@@ -250,6 +250,30 @@ tickets de reabastecimiento duplicados. Imprime la tasa de falsos positivos emp�
 la teórica, y un barrido con distintos tamaños de filtro para ver cómo se acercan ambas.
 
 *(pendiente — comandos de las demás tareas de `unit2/`)*
+
+**Unit 3**
+
+| Tarea | Archivo | Comando |
+| --- | --- | --- |
+| Task 1 — DTMC Construction & State Classification | `unit3/DTMCConstruction.py` | `python unit3/DTMCConstruction.py` |
+
+La Task 1 agrega el stream de scans por `robot_id` (en orden de `stream_seq`) en un grafo de
+movimientos entre bins, y arma con él una cadena de Markov de tiempo discreto: los estados son
+los bins y la matriz de transición M sale de normalizar `move_count` por fila. El grafo de
+aristas se guarda en `data/edges.json`, para que las demás tareas de Unit 3 lo reutilicen.
+
+- **Clasificación formal:** vía componentes fuertemente conexas (algoritmo de Kosaraju, sin
+  dependencias externas). Con este dataset el grafo es una sola componente, así que los 100
+  bins son recurrentes en el sentido estricto de cadenas de Markov; no hay transitorios.
+- **Clasificación práctica:** ordena los bins por tráfico entrante (llegadas de robots) y
+  marca los 10 con más llegadas como "hub" y los 10 con menos como "poco visitados" — la
+  etiqueta de negocio que pide la tarea, distinta de la clasificación formal.
+- **Resultado con el dataset actual:** `bin_1` es el hub principal con 1.256 llegadas; los
+  bins poco visitados rondan las 26 a 31 llegadas.
+- **Funciones reutilizables** (por ejemplo, para las demás tareas y el dashboard):
+  `cargar_grafo`, `construir_matriz_transicion`, `clasificar_formal` y `clasificar_hubs`.
+
+*(pendiente — comandos de las demás tareas de `unit3/`)*
 
 ## Ejecutar el dashboard
 
@@ -276,12 +300,17 @@ distintos (falta superponer la estimación de Flajolet-Martin). El Panel C es un
 alertas de bajo stock en vivo, ordenado por urgencia, con un slider para moverse por el stream
 (falta agregar la tabla de F_k).
 
-Selector que reúne los dos dashboards en un solo lugar, con un menú en la barra lateral:
-*(pendiente — se agrega el comando de cada tarea de `unit1/` y `unit2/` cuando estén listas)*
+Dashboard de la Unit 3 (Panel A completo; Panel D pendiente de la Task 2 y la Task 3):
 
-## Ejecutar el dashboard
+```bash
+streamlit run dashboard_unit3.py
+```
 
-*(pendiente — se confirma cuando `dashboard_unit1.py` y `dashboard_unit2.py` estén listos)*
+El Panel A muestra el grafo de movimientos (bins, movimientos distintos, self-loops,
+componentes fuertemente conexas), el ranking de bins "hub" contra "poco visitados", y un
+explorador que muestra los destinos más probables desde cualquier bin elegido.
+
+Selector que reúne los tres dashboards en un solo lugar, con un menú en la barra lateral:
 
 ```bash
 streamlit run main.py
@@ -297,21 +326,24 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
 - [x] Generador de datos
 - [ ] Unit 1 — tareas
   - [x] Task 1 — Big Data Context
-  - [x] Task 4 — Hash Table Operations
   - [x] Task 2 — Randomized Algorithm
   - [x] Task 3 — Universal Hashing
+  - [x] Task 4 — Hash Table Operations
   - [x] Task 5 — Probability Analysis
   - [ ] Demás tareas
 - [ ] Unit 2 — tareas
   - [x] Task 1 — Stream Model & Query Design
   - [x] Task 2 — Bloom Filter
   - [ ] Demás tareas
+- [ ] Unit 3 — tareas
+  - [x] Task 1 — DTMC Construction & State Classification
+  - [ ] Demás tareas
 - [ ] Dashboards
   - [x] Unit 1 — Panel A
   - [ ] Unit 1 — Panel B y Panel C
   - [x] Unit 2 — Panel A y Panel B
   - [ ] Unit 2 — Panel C (falta F_k)
+  - [x] Unit 3 — Panel A
+  - [ ] Unit 3 — Panel D (falta PageRank y distribución estacionaria)
   - [x] Selector `main.py`
-- [ ] Unit 2 — tareas
-- [ ] Dashboards
 - [ ] Informe
