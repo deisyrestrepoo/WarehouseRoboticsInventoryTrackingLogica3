@@ -115,6 +115,7 @@ Cada tarea se puede correr por separado desde la raíz del proyecto.
 | --- | --- | --- |
 | Task 1 — Big Data Context | `unit1/BigDataContext.py` | `python unit1/BigDataContext.py` |
 | Task 4 — Hash Table Operations | `unit1/HashTableOperations.py` | `python unit1/HashTableOperations.py` |
+| Task 5 — Probability Analysis | `unit1/ProbabilityAnalysis.py` | `python unit1/ProbabilityAnalysis.py` |
 
 La Task 1 pone el escenario en contexto de Big Data: estima cuántos scans por segundo genera la
 flota de robots y cuánto almacenamiento necesita el sistema, hoy y con un crecimiento de 10x
@@ -168,11 +169,6 @@ scan quedó en la muestra con la misma probabilidad `k/n`, así que la muestra e
   `conteo_exacto`, `estimar` y `experimento`.
 - **Pruebas:** `python -m unittest tests.test_randomized_algorithm -v`
 
-La Task 4 construye una tabla hash con clave `bin_location` (100 buckets por defecto) y
-compara chaining contra Power of Two Choices. Imprime carga máxima y mínima, desviación
-estándar, buckets vacíos y registros revisados por búsqueda, y repite el experimento 30 veces
-con distintas funciones hash para promediar la carga máxima.
-
 La Task 3 aplica **hash universal** sobre `sku` para armar el índice de búsqueda rápida del
 sistema de reabastecimiento y mide cuántas colisiones produce. La función es de la familia
 Carter-Wegman, `h(x) = ((a·x + b) mod P) mod m`, con `P = 2^61 − 1` y `a`, `b` aleatorios (la
@@ -203,6 +199,38 @@ pares en colisión, sin importar cómo sean los SKUs.
 - **Funciones reutilizables** (por ejemplo, para el dashboard): `FuncionHashUniversal`,
   `IndiceHash`, `tabla_colisiones` y `benchmark_busqueda`.
 - **Pruebas:** `python -m unittest tests.test_universal_hashing -v`
+
+La Task 4 construye una tabla hash con clave `bin_location` (100 buckets por defecto) y
+compara chaining contra Power of Two Choices. Imprime carga máxima y mínima, desviación
+estándar, buckets vacíos y registros revisados por búsqueda, y repite el experimento 30 veces
+con distintas funciones hash para promediar la carga máxima.
+
+La Task 5 usa la **desigualdad de Chebyshev** para acotar cuánto puede alejarse la tasa de bajo
+stock estimada con una muestra de la tasa real de toda la bodega. Si `p` es la fracción real de
+scans con `is_low_stock` y `p̂` es la fracción en una muestra uniforme de `n` scans, entonces
+`E[p̂] = p`, `Var(p̂) ≤ p(1 − p)/n` y
+
+`Pr[ |p̂ − p| ≥ ε ] ≤ p(1 − p) / (n · ε²)`
+
+- **Dos cotas:** una con la `p` real del dataset y otra de peor caso (`p(1 − p) ≤ 1/4`), útil
+  cuando `p` no se conoce de antemano.
+- **Muestra mínima:** despejando `n`, para una confianza `1 − δ` basta `n ≥ p(1 − p) / (ε² · δ)`.
+- **Comparación empírica:** con `ε` = 0,03 repite 2.000 veces el muestreo (semilla fija) para
+  `n` = 100, 250, 500, 1000 y 2000 y cuenta cuántas veces el error llega a `ε`.
+- **Resultado con el dataset actual** (10.000 scans): la tasa real de bajo stock es
+  `p` = 0,1241. La cota de Chebyshev con `p` es 1,00 / 0,483 / 0,242 / 0,121 / 0,060 y la
+  frecuencia empírica es 0,360 / 0,151 / 0,039 / 0,003 / 0,000 (para `n` = 100 / 250 / 500 /
+  1000 / 2000). La cota se cumple siempre, pero es conservadora: con `n` = 1000 acota en 12 %
+  un evento que ocurre el 0,3 % de las veces. El peor caso exige `n` = 2.778 para 90 % de
+  confianza y 5.556 para 95 %; con la `p` real bastan 1.208 y 2.416.
+- **Por qué sobra margen:** Chebyshev solo usa la varianza, sin suponer la forma de la
+  distribución. Además, las muestras se toman sin reemplazo, y eso reduce la varianza real
+  (corrección por población finita) por debajo de `p(1 − p)/n`, así que la cota sigue siendo
+  válida.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `tasa_real`, `cota_chebyshev`,
+  `muestra_minima`, `probabilidad_empirica` y `analisis`.
+- **Pruebas:** `python -m unittest tests.test_probability_analysis -v`
+
 
 *(pendiente — comandos de las demás tareas de `unit1/`)*
 
@@ -272,6 +300,7 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
   - [x] Task 4 — Hash Table Operations
   - [x] Task 2 — Randomized Algorithm
   - [x] Task 3 — Universal Hashing
+  - [x] Task 5 — Probability Analysis
   - [ ] Demás tareas
 - [ ] Unit 2 — tareas
   - [x] Task 1 — Stream Model & Query Design
