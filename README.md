@@ -113,6 +113,30 @@ Cada tarea se puede correr por separado desde la raíz del proyecto.
 
 | Tarea | Archivo | Comando |
 | --- | --- | --- |
+| Task 1 — Big Data Context | `unit1/BigDataContext.py` | `python unit1/BigDataContext.py` |
+| Task 4 — Hash Table Operations | `unit1/HashTableOperations.py` | `python unit1/HashTableOperations.py` |
+
+La Task 1 pone el escenario en contexto de Big Data: estima cuántos scans por segundo genera la
+flota de robots y cuánto almacenamiento necesita el sistema, hoy y con un crecimiento de 10x
+de la red de bodegas.
+
+- **Throughput:** `(scans − 1) / duración del dataset`, porque `n` scans delimitan `n − 1`
+  intervalos. También lo reparte por robot.
+- **Almacenamiento:** mide los bytes promedio de un scan serializado como JSON compacto (UTF-8) y
+  proyecta `throughput × segundos × bytes por registro` a un día y a un año (GB = 2^30 bytes).
+- **Crecimiento 10x:** se multiplican por 10 los robots y, con ellos, el throughput y el
+  almacenamiento (cada robot conserva su ritmo de scans). La proyección es lineal.
+- **Resultado con el dataset actual** (10.000 scans, 20 robots): 1,00 scans/seg en total
+  (0,05 por robot) y 189 bytes por registro. Hoy son 86.400 scans y unos 0,015 GB por día
+  (31.536.000 scans y 5,5 GB por año). Con 10x son 10 scans/seg con 200 robots, 864.000 scans y
+  unos 0,15 GB por día (315.360.000 scans y 55,4 GB por año).
+- **Cómo leer el resultado:** el generador espacia los scans un segundo, así que la tasa total de
+  1,0 scans/seg sale de los timestamps sintéticos y no es una medición de una flota real. Los
+  bytes cuentan los 9 campos del dataset (los 7 del escenario más `stream_seq` y `aisle`) y no
+  incluyen índices, réplicas ni compresión, por lo que el almacenamiento real sería mayor.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `tasa_scans_por_segundo`,
+  `bytes_por_registro`, `proyectar` y `analisis`.
+- **Pruebas:** `python -m unittest tests.test_big_data_context -v`
 | Task 2 — Randomized Algorithm | `unit1/RandomizedAlgorithm.py` | `python unit1/RandomizedAlgorithm.py` |
 | Task 4 — Hash Table Operations | `unit1/HashTableOperations.py` | `python unit1/HashTableOperations.py` |
 | Task 3 — Universal Hashing | `unit1/UniversalHashing.py` | `python unit1/UniversalHashing.py` |
@@ -244,8 +268,9 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
 
 - [x] Generador de datos
 - [ ] Unit 1 — tareas
-  - [x] Task 2 — Randomized Algorithm
+  - [x] Task 1 — Big Data Context
   - [x] Task 4 — Hash Table Operations
+  - [x] Task 2 — Randomized Algorithm
   - [x] Task 3 — Universal Hashing
   - [ ] Demás tareas
 - [ ] Unit 2 — tareas
