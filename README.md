@@ -278,6 +278,8 @@ todo el stream; aquí se cuenta todo con precisión porque solo hay 100 bins).
 | --- | --- | --- |
 | Task 1 — DTMC Construction & State Classification | `unit3/DTMCConstruction.py` | `python unit3/DTMCConstruction.py` |
 | Task 2 — Stationary Distribution | `unit3/StationaryDistribution.py` | `python unit3/StationaryDistribution.py` |
+| Task 3 — PageRank | `unit3/PageRank.py` | `python unit3/PageRank.py` |
+
 
 La Task 1 agrega el stream de scans por `robot_id` (en orden de `stream_seq`) en un grafo de
 movimientos entre bins, y arma con él una cadena de Markov de tiempo discreto: los estados son
@@ -294,7 +296,7 @@ aristas se guarda en `data/edges.json`, para que las demás tareas de Unit 3 lo 
   bins poco visitados rondan las 26 a 31 llegadas.
 - **Funciones reutilizables** (por ejemplo, para las demás tareas y el dashboard):
   `cargar_grafo`, `construir_matriz_transicion`, `clasificar_formal` y `clasificar_hubs`.
-
+  
 La Task 2 calcula la **distribución estacionaria** π de la cadena de Markov (estados =
 bins, M de la Task 1): π_i es la fracción del tiempo que, a largo plazo, un robot pasa (o
 llega) al bin i, sin importar en qué bin empezó.
@@ -318,6 +320,33 @@ llega) al bin i, sin importar en qué bin empezó.
 - **Funciones reutilizables** (por ejemplo, para el dashboard, Panel D): `power_iteration`,
   `distribucion_estacionaria`, `verificar_estacionaria` y `comparar_rankings`.
 - **Pruebas:** `python -m unittest tests.test_stationary_distribution -v`
+
+La Task 3 calcula **PageRank con teletransportación** sobre el mismo grafo de la Task 1:
+P = d·M + (1−d)·U, con U la teletransportación uniforme (1/n a cualquier bin) y
+d = 0,85 (valor estándar). Es la misma idea de iteración de potencias que usa la Task 2,
+pero sobre P en vez de M tal cual (y se reimplementa aquí mismo, para que esta tarea no
+dependa de que la Task 2 de un compañero ya esté en el repo).
+
+- **Por qué teletransportar:** hace que P sea ergódica aunque M no lo fuera (bins sin
+  salida, componentes separadas), y pondera más a los bins a los que llega tráfico desde
+  MUCHOS bins distintos, no solo a los que reciben MUCHO tráfico de pocos.
+- **Convergencia:** se guarda la trayectoria completa de π(t) (no solo la distancia entre
+  iteraciones sucesivas) para medir ||π(t) − π_final||₁ en cada paso. La teoría solo
+  garantiza que la convergencia no sea más lenta que una tasa d por iteración (cota
+  superior); en este dataset converge mucho más rápido que esa cota.
+- **Interpretación:** se compara el ranking de bins por PageRank contra el conteo crudo de
+  scans por bin y contra la distribución estacionaria de M sin teletransportar (d=1).
+- **Resultado con el dataset actual** (100 bins, d=0,85): converge en 12 iteraciones
+  (||π(t+1)−π(t)||₁ < 1e-12); a la iteración 3 el error contra el resultado final ya bajó
+  de 0,64 a 0,0004. `bin_1` lidera con 10,83 % de PageRank (bajó de 12,58 % sin
+  teletransportar: el 15 % de masa que ahora se reparte parejo entre los 100 bins le resta
+  peso a los más concentrados). El ranking top-10 coincide 10/10 tanto con el conteo crudo
+  como con la distribución sin teletransportar (Spearman ≥ 0,998 en ambos casos); la
+  diferencia puntual más grande es 1,75 puntos porcentuales en algún bin.
+- **Funciones reutilizables** (por ejemplo, para el dashboard, Panel D): `pagerank`,
+  `construir_matriz_google`, `analizar_convergencia` y `comparar_rankings`.
+- **Pruebas:** `python -m unittest tests.test_pagerank -v`
+
 
 *(pendiente — comandos de las demás tareas de `unit3/`)*
 
@@ -385,6 +414,7 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
 - [ ] Unit 3 — tareas
   - [x] Task 1 — DTMC Construction & State Classification
   - [x] Task 2 — Stationary Distribution
+  - [x] Task 3 — PageRank
   - [ ] Demás tareas
 - [ ] Dashboards
   - [x] Unit 1 — Panel A
