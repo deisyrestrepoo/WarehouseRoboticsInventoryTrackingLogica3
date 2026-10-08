@@ -308,8 +308,8 @@ Se abre en el navegador. El Panel A muestra la cantidad de scans por bucket con 
 Power of Two Choices, y un deslizador permite cambiar el número de buckets. El Panel B y el
 Panel C se agregan cuando estén listas sus tareas.
 
-Dashboard de la Unit 2 (Panel A y Panel B completos, Panel C con la parte de la Task 1;
-falta lo de Flajolet-Martin y F_k):
+Dashboard de la Unit 2 (Panel A y Panel C completos; en el Panel B falta superponer la
+estimación de Flajolet-Martin, Task 4):
 
 ```bash
 streamlit run dashboard_unit2.py
@@ -318,8 +318,8 @@ streamlit run dashboard_unit2.py
 El Panel A muestra la tasa de falsos positivos del Bloom filter a medida que avanza el turno,
 con controles para ajustar el tamaño del filtro. El Panel B grafica el conteo real de SKUs
 distintos (falta superponer la estimación de Flajolet-Martin). El Panel C es un tablero de
-alertas de bajo stock en vivo, ordenado por urgencia, con un slider para moverse por el stream
-(falta agregar la tabla de F_k).
+alertas de bajo stock en vivo, ordenado por urgencia, con un slider para moverse por el stream,
+más las métricas F0/F1/F2 (Task 5) y el top 10 de bins con más tráfico, calculados sobre los mismos scans que muestra el slider.
 
 Dashboard de la Unit 3 (Panel A completo; Panel D pendiente de la Task 2 y la Task 3):
 
@@ -364,7 +364,7 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
   - [x] Unit 1 — Panel A
   - [ ] Unit 1 — Panel B y Panel C
   - [x] Unit 2 — Panel A y Panel B
-  - [ ] Unit 2 — Panel C (falta F_k)
+  - [x] Unit 2 — Panel C
   - [x] Unit 3 — Panel A
   - [ ] Unit 3 — Panel D (falta PageRank y distribución estacionaria)
   - [x] Selector `main.py`

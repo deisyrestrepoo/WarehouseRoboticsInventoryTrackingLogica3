@@ -2,13 +2,14 @@
 Dashboard Unit 2.
 Panel A: tasa de falsos positivos del Bloom filter "hasta ahora" (Task 2).
 Panel B: SKUs distintos, conteo real (Task 1) vs. estimación de Flajolet-Martin (Task 4) - pendiente.
-Panel C: tablero de alertas de bajo stock en vivo (Task 1) + resultado de F_k (Task 5) - pendiente.
+Panel C: tablero de alertas de bajo stock en vivo (Task 1) + resultado de F_k (Task 5).
 """
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 from unit2.BloomFilter import FiltroBloom, barrer_tamanos, calcular_parametros_optimos, simular
+from unit2.FrequencyMoments import calcular_momentos, numero_efectivo, top_bins
 from unit2.StreamModelQueryDesign import (
     TAMANO_VENTANA,
     ConsultaBajoStockPorPasillo,
@@ -47,6 +48,12 @@ def _estado_ventana(posicion, tamano_ventana):
     for scan in _cargar_scans()[:posicion]:
         consulta.procesar(scan)
     return list(consulta.ventana)
+
+
+@st.cache_data
+def _momentos_hasta(posicion):
+    """F0/F1/F2 (Task 5) sobre los primeros `posicion` scans del stream, por bin_location."""
+    return calcular_momentos(_cargar_scans()[:posicion], clave="bin_location")
 
 
 def panel_a():
@@ -173,8 +180,26 @@ def panel_c():
     else:
         st.info("No hay SKUs en bajo stock en esta ventana.")
 
-    st.markdown("**Momentos F₀, F₁, F₂ (Task 5)**")
-    st.info("Pendiente: se agrega la tabla con el resultado de F_k cuando esa tarea esté lista.")
+    st.markdown("**Momentos F₀, F₁, F₂ sobre bin_location (Task 5)**")
+    st.caption(
+        "Calculados de forma exacta (no estimados) sobre los mismos scans procesados "
+        "hasta la posición elegida arriba: F0 = bins distintos, F1 = total de scans, "
+        "F2 = suma de (conteo por bin)²."
+    )
+
+    momentos = _momentos_hasta(posicion)
+    f0, f1, f2 = momentos["F0"], momentos["F1"], momentos["F2"]
+    n_efectivo = numero_efectivo(f0, f1, f2)
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("F0 (bins distintos)", f0)
+    col2.metric("F1 (total scans)", f1)
+    col3.metric("F2 (suma conteo²)", f"{f2:,}")
+    col4.metric("Número efectivo de bins (F1²/F2)", f"{n_efectivo:.1f}", delta=f"de {f0}", delta_color="off")
+
+    tabla_top = pd.DataFrame(top_bins(momentos["conteos"], top_n=10), columns=["Bin", "Scans"])
+    fig_top = px.bar(tabla_top, x="Bin", y="Scans", title="Top 10 bins con más tráfico")
+    st.plotly_chart(fig_top, width="stretch")
 
 
 def main():
