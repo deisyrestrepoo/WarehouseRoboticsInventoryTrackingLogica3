@@ -240,6 +240,7 @@ scans con `is_low_stock` y `p̂` es la fracción en una muestra uniforme de `n` 
 | --- | --- | --- |
 | Task 1 — Stream Model & Query Design | `unit2/StreamModelQueryDesign.py` | `python unit2/StreamModelQueryDesign.py` |
 | Task 2 — Bloom Filter | `unit2/BloomFilter.py` | `python unit2/BloomFilter.py` |
+| Task 5 — Frequency Moments | `unit2/FrequencyMoments.py` | `python unit2/FrequencyMoments.py` |
 
 La Task 1 simula el stream de scans y responde dos consultas: SKUs en bajo stock por
 pasillo en los últimos 300 scans (ventana deslizante) y SKUs distintos vistos en el día
@@ -249,6 +250,26 @@ La Task 2 arma un filtro de Bloom con los SKUs ya alertados en bajo stock, para 
 tickets de reabastecimiento duplicados. Imprime la tasa de falsos positivos empírica contra
 la teórica, y un barrido con distintos tamaños de filtro para ver cómo se acercan ambas.
 
+La Task 5 calcula **F0, F1 y F2 exactos** sobre los conteos de scans por `bin_location`
+(a diferencia del Flajolet-Martin de la Task 4, que *estima* F0 sobre `sku` sin guardar
+todo el stream; aquí se cuenta todo con precisión porque solo hay 100 bins).
+
+- **F0** = bins distintos que recibieron algún scan. **F1** = total de scans. **F2** =
+  suma de (conteo por bin)². Una sola pasada sobre el stream, con un diccionario de
+  conteos (cabe en memoria sin problema).
+- **Número efectivo de bins:** F1²/F2. Vale F0 si el tráfico está parejo entre todos los
+  bins, y baja cuanto más se concentra en pocos (es el inverso del índice de Herfindahl,
+  una medida de concentración).
+- **Interpretación:** además de los momentos, se rankean los bins y los pasillos por
+  tráfico, para ver dónde se concentran los robots.
+- **Resultado con el dataset actual** (10.000 scans, 100 bins): F0 = 100, F1 = 10.000,
+  F2 = 3.347.136, número efectivo ≈ 29,9 de 100 — el tráfico está bastante concentrado.
+  `bin_1` es el más visitado con 1.260 scans y `aisle_1` el pasillo con más tráfico
+  (4.362 scans), coherente con el sesgo que trae el generador de datos.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `calcular_momentos`,
+  `numero_efectivo`, `top_bins` y `trafico_por_pasillo`.
+- **Pruebas:** `python -m unittest tests.test_frequency_moments -v`
+
 *(pendiente — comandos de las demás tareas de `unit2/`)*
 
 **Unit 3**
@@ -256,7 +277,9 @@ la teórica, y un barrido con distintos tamaños de filtro para ver cómo se ace
 | Tarea | Archivo | Comando |
 | --- | --- | --- |
 | Task 1 — DTMC Construction & State Classification | `unit3/DTMCConstruction.py` | `python unit3/DTMCConstruction.py` |
+| Task 2 — Stationary Distribution | `unit3/StationaryDistribution.py` | `python unit3/StationaryDistribution.py` |
 | Task 3 — PageRank | `unit3/PageRank.py` | `python unit3/PageRank.py` |
+
 
 La Task 1 agrega el stream de scans por `robot_id` (en orden de `stream_seq`) en un grafo de
 movimientos entre bins, y arma con él una cadena de Markov de tiempo discreto: los estados son
@@ -273,6 +296,30 @@ aristas se guarda en `data/edges.json`, para que las demás tareas de Unit 3 lo 
   bins poco visitados rondan las 26 a 31 llegadas.
 - **Funciones reutilizables** (por ejemplo, para las demás tareas y el dashboard):
   `cargar_grafo`, `construir_matriz_transicion`, `clasificar_formal` y `clasificar_hubs`.
+  
+La Task 2 calcula la **distribución estacionaria** π de la cadena de Markov (estados =
+bins, M de la Task 1): π_i es la fracción del tiempo que, a largo plazo, un robot pasa (o
+llega) al bin i, sin importar en qué bin empezó.
+
+- **Método:** iteración de potencias, π_{t+1} = π_t · M desde la distribución uniforme,
+  hasta que ||π(t+1) − π(t)||₁ < 1e-10. Como la cadena es irreducible (Task 1: una sola
+  componente fuertemente conexa), converge a una única π > 0 sin importar el punto de
+  partida.
+- **Verificación:** se comprueba que π · M ≈ π (residuo < 1e-8) y que π suma 1.
+- **Interpretación:** se compara el ranking de bins por π contra dos referencias crudas
+  (sin ningún modelo de cadena detrás): el conteo de scans por bin y el tráfico entrante
+  del grafo de movimientos (de la Task 1).
+- **Resultado con el dataset actual** (100 bins): converge en 11 iteraciones, residuo
+  3,57e-13. `bin_1` concentra el 12,58 % del tiempo de largo plazo, seguido de `bin_2`
+  (7,20 %) y `bin_3` (4,75 %). El ranking por π coincide 10/10 en el top-10 con el conteo
+  crudo de scans y con el tráfico entrante (Spearman 0,999 en ambos casos): el sesgo de
+  tráfico que trae el generador de datos domina tanto el conteo directo como la dinámica
+  de largo plazo de la cadena, así que aquí pensar en términos de cadena de Markov no
+  cambia mucho el ranking (sí lo haría si el grafo tuviera ciclos o cuellos de botella
+  menos triviales).
+- **Funciones reutilizables** (por ejemplo, para el dashboard, Panel D): `power_iteration`,
+  `distribucion_estacionaria`, `verificar_estacionaria` y `comparar_rankings`.
+- **Pruebas:** `python -m unittest tests.test_stationary_distribution -v`
 
 La Task 3 calcula **PageRank con teletransportación** sobre el mismo grafo de la Task 1:
 P = d·M + (1−d)·U, con U la teletransportación uniforme (1/n a cualquier bin) y
@@ -300,6 +347,7 @@ dependa de que la Task 2 de un compañero ya esté en el repo).
   `construir_matriz_google`, `analizar_convergencia` y `comparar_rankings`.
 - **Pruebas:** `python -m unittest tests.test_pagerank -v`
 
+
 *(pendiente — comandos de las demás tareas de `unit3/`)*
 
 ## Ejecutar el dashboard
@@ -314,8 +362,8 @@ Se abre en el navegador. El Panel A muestra la cantidad de scans por bucket con 
 Power of Two Choices, y un deslizador permite cambiar el número de buckets. El Panel B y el
 Panel C se agregan cuando estén listas sus tareas.
 
-Dashboard de la Unit 2 (Panel A y Panel B completos, Panel C con la parte de la Task 1;
-falta lo de Flajolet-Martin y F_k):
+Dashboard de la Unit 2 (Panel A y Panel C completos; en el Panel B falta superponer la
+estimación de Flajolet-Martin, Task 4):
 
 ```bash
 streamlit run dashboard_unit2.py
@@ -324,8 +372,8 @@ streamlit run dashboard_unit2.py
 El Panel A muestra la tasa de falsos positivos del Bloom filter a medida que avanza el turno,
 con controles para ajustar el tamaño del filtro. El Panel B grafica el conteo real de SKUs
 distintos (falta superponer la estimación de Flajolet-Martin). El Panel C es un tablero de
-alertas de bajo stock en vivo, ordenado por urgencia, con un slider para moverse por el stream
-(falta agregar la tabla de F_k).
+alertas de bajo stock en vivo, ordenado por urgencia, con un slider para moverse por el stream,
+más las métricas F0/F1/F2 (Task 5) y el top 10 de bins con más tráfico, calculados sobre los mismos scans que muestra el slider.
 
 Dashboard de la Unit 3 (Panel A completo; Panel D pendiente de la Task 2 y la Task 3):
 
@@ -361,16 +409,18 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
 - [ ] Unit 2 — tareas
   - [x] Task 1 — Stream Model & Query Design
   - [x] Task 2 — Bloom Filter
+  - [x] Task 5 — Frequency Moments
   - [ ] Demás tareas
 - [ ] Unit 3 — tareas
   - [x] Task 1 — DTMC Construction & State Classification
+  - [x] Task 2 — Stationary Distribution
   - [x] Task 3 — PageRank
   - [ ] Demás tareas
 - [ ] Dashboards
   - [x] Unit 1 — Panel A
   - [ ] Unit 1 — Panel B y Panel C
   - [x] Unit 2 — Panel A y Panel B
-  - [ ] Unit 2 — Panel C (falta F_k)
+  - [x] Unit 2 — Panel C
   - [x] Unit 3 — Panel A
   - [ ] Unit 3 — Panel D (falta PageRank y distribución estacionaria)
   - [x] Selector `main.py`
