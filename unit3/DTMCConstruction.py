@@ -34,9 +34,8 @@ RUTA_ARISTAS = os.path.join(
 )
 
 
-# ---------------------------------------------------------------------------
+
 # Construcción del dataset de aristas (agregado por robot_id, en orden de stream_seq)
-# ---------------------------------------------------------------------------
 
 def _orden_bin(nombre_bin):
     """'bin_12' -> 12, para ordenar numéricamente y no como texto ('bin_10' < 'bin_2')."""
@@ -96,9 +95,7 @@ def obtener_aristas(forzar_reconstruccion=False):
     return aristas
 
 
-# ---------------------------------------------------------------------------
 # Construcción de la cadena de Markov (estados + matriz de transición)
-# ---------------------------------------------------------------------------
 
 def construir_estados(aristas):
     bins = {e["from_bin"] for e in aristas} | {e["to_bin"] for e in aristas}
@@ -129,9 +126,7 @@ def construir_matriz_transicion(aristas, estados):
     return M, estados_sin_salida
 
 
-# ---------------------------------------------------------------------------
 # Clasificación formal: componentes fuertemente conexas (Kosaraju)
-# ---------------------------------------------------------------------------
 
 def _adjacencia(aristas):
     adj = defaultdict(set)
@@ -217,9 +212,7 @@ def clasificar_formal(estados, aristas):
     return clasificacion, componentes
 
 
-# ---------------------------------------------------------------------------
 # Clasificación práctica: hubs vs. bins poco visitados, por tráfico entrante
-# ---------------------------------------------------------------------------
 
 def trafico_entrante(aristas):
     entrante = defaultdict(int)
