@@ -277,6 +277,7 @@ todo el stream; aquí se cuenta todo con precisión porque solo hay 100 bins).
 | Tarea | Archivo | Comando |
 | --- | --- | --- |
 | Task 1 — DTMC Construction & State Classification | `unit3/DTMCConstruction.py` | `python unit3/DTMCConstruction.py` |
+| Task 2 — Stationary Distribution | `unit3/StationaryDistribution.py` | `python unit3/StationaryDistribution.py` |
 
 La Task 1 agrega el stream de scans por `robot_id` (en orden de `stream_seq`) en un grafo de
 movimientos entre bins, y arma con él una cadena de Markov de tiempo discreto: los estados son
@@ -293,6 +294,30 @@ aristas se guarda en `data/edges.json`, para que las demás tareas de Unit 3 lo 
   bins poco visitados rondan las 26 a 31 llegadas.
 - **Funciones reutilizables** (por ejemplo, para las demás tareas y el dashboard):
   `cargar_grafo`, `construir_matriz_transicion`, `clasificar_formal` y `clasificar_hubs`.
+
+La Task 2 calcula la **distribución estacionaria** π de la cadena de Markov (estados =
+bins, M de la Task 1): π_i es la fracción del tiempo que, a largo plazo, un robot pasa (o
+llega) al bin i, sin importar en qué bin empezó.
+
+- **Método:** iteración de potencias, π_{t+1} = π_t · M desde la distribución uniforme,
+  hasta que ||π(t+1) − π(t)||₁ < 1e-10. Como la cadena es irreducible (Task 1: una sola
+  componente fuertemente conexa), converge a una única π > 0 sin importar el punto de
+  partida.
+- **Verificación:** se comprueba que π · M ≈ π (residuo < 1e-8) y que π suma 1.
+- **Interpretación:** se compara el ranking de bins por π contra dos referencias crudas
+  (sin ningún modelo de cadena detrás): el conteo de scans por bin y el tráfico entrante
+  del grafo de movimientos (de la Task 1).
+- **Resultado con el dataset actual** (100 bins): converge en 11 iteraciones, residuo
+  3,57e-13. `bin_1` concentra el 12,58 % del tiempo de largo plazo, seguido de `bin_2`
+  (7,20 %) y `bin_3` (4,75 %). El ranking por π coincide 10/10 en el top-10 con el conteo
+  crudo de scans y con el tráfico entrante (Spearman 0,999 en ambos casos): el sesgo de
+  tráfico que trae el generador de datos domina tanto el conteo directo como la dinámica
+  de largo plazo de la cadena, así que aquí pensar en términos de cadena de Markov no
+  cambia mucho el ranking (sí lo haría si el grafo tuviera ciclos o cuellos de botella
+  menos triviales).
+- **Funciones reutilizables** (por ejemplo, para el dashboard, Panel D): `power_iteration`,
+  `distribucion_estacionaria`, `verificar_estacionaria` y `comparar_rankings`.
+- **Pruebas:** `python -m unittest tests.test_stationary_distribution -v`
 
 *(pendiente — comandos de las demás tareas de `unit3/`)*
 
@@ -359,6 +384,7 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
   - [ ] Demás tareas
 - [ ] Unit 3 — tareas
   - [x] Task 1 — DTMC Construction & State Classification
+  - [x] Task 2 — Stationary Distribution
   - [ ] Demás tareas
 - [ ] Dashboards
   - [x] Unit 1 — Panel A
