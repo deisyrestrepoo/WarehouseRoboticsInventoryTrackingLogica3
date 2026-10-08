@@ -240,6 +240,7 @@ scans con `is_low_stock` y `p̂` es la fracción en una muestra uniforme de `n` 
 | --- | --- | --- |
 | Task 1 — Stream Model & Query Design | `unit2/StreamModelQueryDesign.py` | `python unit2/StreamModelQueryDesign.py` |
 | Task 2 — Bloom Filter | `unit2/BloomFilter.py` | `python unit2/BloomFilter.py` |
+| Task 5 — Frequency Moments | `unit2/FrequencyMoments.py` | `python unit2/FrequencyMoments.py` |
 
 La Task 1 simula el stream de scans y responde dos consultas: SKUs en bajo stock por
 pasillo en los últimos 300 scans (ventana deslizante) y SKUs distintos vistos en el día
@@ -248,6 +249,26 @@ pasillo en los últimos 300 scans (ventana deslizante) y SKUs distintos vistos e
 La Task 2 arma un filtro de Bloom con los SKUs ya alertados en bajo stock, para no generar
 tickets de reabastecimiento duplicados. Imprime la tasa de falsos positivos empírica contra
 la teórica, y un barrido con distintos tamaños de filtro para ver cómo se acercan ambas.
+
+La Task 5 calcula **F0, F1 y F2 exactos** sobre los conteos de scans por `bin_location`
+(a diferencia del Flajolet-Martin de la Task 4, que *estima* F0 sobre `sku` sin guardar
+todo el stream; aquí se cuenta todo con precisión porque solo hay 100 bins).
+
+- **F0** = bins distintos que recibieron algún scan. **F1** = total de scans. **F2** =
+  suma de (conteo por bin)². Una sola pasada sobre el stream, con un diccionario de
+  conteos (cabe en memoria sin problema).
+- **Número efectivo de bins:** F1²/F2. Vale F0 si el tráfico está parejo entre todos los
+  bins, y baja cuanto más se concentra en pocos (es el inverso del índice de Herfindahl,
+  una medida de concentración).
+- **Interpretación:** además de los momentos, se rankean los bins y los pasillos por
+  tráfico, para ver dónde se concentran los robots.
+- **Resultado con el dataset actual** (10.000 scans, 100 bins): F0 = 100, F1 = 10.000,
+  F2 = 3.347.136, número efectivo ≈ 29,9 de 100 — el tráfico está bastante concentrado.
+  `bin_1` es el más visitado con 1.260 scans y `aisle_1` el pasillo con más tráfico
+  (4.362 scans), coherente con el sesgo que trae el generador de datos.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `calcular_momentos`,
+  `numero_efectivo`, `top_bins` y `trafico_por_pasillo`.
+- **Pruebas:** `python -m unittest tests.test_frequency_moments -v`
 
 *(pendiente — comandos de las demás tareas de `unit2/`)*
 
@@ -334,6 +355,7 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
 - [ ] Unit 2 — tareas
   - [x] Task 1 — Stream Model & Query Design
   - [x] Task 2 — Bloom Filter
+  - [x] Task 5 — Frequency Moments
   - [ ] Demás tareas
 - [ ] Unit 3 — tareas
   - [x] Task 1 — DTMC Construction & State Classification
