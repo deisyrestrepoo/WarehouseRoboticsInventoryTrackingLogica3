@@ -252,6 +252,7 @@ La Task 2 arma un filtro de Bloom con los SKUs ya alertados en bajo stock, para 
 tickets de reabastecimiento duplicados. Imprime la tasa de falsos positivos empírica contra
 la teórica, y un barrido con distintos tamaños de filtro para ver cómo se acercan ambas.
 
+
 La Task 3 estima, con una muestra de tamaño fijo del stream, la fracción de SKUs que están
 *actualmente* en bajo stock (el estado del último scan de cada SKU visto hasta ese momento) y la
 compara con la fracción real. Usa tres tamaños de muestra: 100, 300 y 900.
