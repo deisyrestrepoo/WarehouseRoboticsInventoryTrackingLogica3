@@ -252,7 +252,6 @@ La Task 2 arma un filtro de Bloom con los SKUs ya alertados en bajo stock, para 
 tickets de reabastecimiento duplicados. Imprime la tasa de falsos positivos empírica contra
 la teórica, y un barrido con distintos tamaños de filtro para ver cómo se acercan ambas.
 
-
 La Task 3 estima, con una muestra de tamaño fijo del stream, la fracción de SKUs que están
 *actualmente* en bajo stock (el estado del último scan de cada SKU visto hasta ese momento) y la
 compara con la fracción real. Usa tres tamaños de muestra: 100, 300 y 900.
@@ -325,6 +324,7 @@ todo el stream; aquí se cuenta todo con precisión porque solo hay 100 bins).
 | Task 2 — Stationary Distribution | `unit3/StationaryDistribution.py` | `python unit3/StationaryDistribution.py` |
 | Task 3 — PageRank | `unit3/PageRank.py` | `python unit3/PageRank.py` |
 | Task 4 — Random Walk | `unit3/RandomWalk.py` | `python unit3/RandomWalk.py` |
+| Task 5 — Randomized 2-SAT | `unit3/Randomized2SAT.py` | `python unit3/Randomized2SAT.py` |
 
 
 La Task 1 agrega el stream de scans por `robot_id` (en orden de `stream_seq`) en un grafo de
@@ -393,7 +393,6 @@ dependa de que la Task 2 de un compañero ya esté en el repo).
   `construir_matriz_google`, `analizar_convergencia` y `comparar_rankings`.
 - **Pruebas:** `python -m unittest tests.test_pagerank -v`
 
-
 La Task 4 simula una **caminata aleatoria perezosa** sobre la cadena de la Task 1 y comprueba que la
 fracción de pasos que el robot pasa en cada bin se acerca a la probabilidad estacionaria teórica πᵢ. En
 cada paso el robot se queda donde está con probabilidad 1/2 (self-loop) y se mueve según `M` con
@@ -418,6 +417,38 @@ probabilidad 1/2; la matriz es `L = (I + M)/2`.
 - **Funciones reutilizables:** `hacer_perezosa`, `distribucion_estacionaria`, `simular_caminata`,
   `comparar_con_pi`, `error_vs_pasos` y `variacion_total_por_paso`.
 - **Pruebas:** `python -m unittest tests.test_random_walk -v`
+
+
+La Task 5 resuelve con el **algoritmo de Papadimitriou** un 2-SAT de restricciones de reabastecimiento
+sobre los 8 bins de mayor π y lo compara con un solver exacto (grafo de implicaciones y componentes
+fuertemente conexas). Cada bin candidato `b` aporta dos variables: `R_b` (se desvía un robot hacia `b`) y
+`P_b` (se prioriza el reabastecimiento en `b`), es decir, 16 variables.
+
+- **Cinco reglas:** (1) urgencia: si π de `b` es alta (≥ 2/N) y su fracción de bajo stock al llegar es alta
+  (≥ la tasa global, 0,1242), entonces `R_b ∨ P_b`; (2) un solo recurso por bin: `¬R_b ∨ ¬P_b`; (3) un solo
+  desvío por pasillo: `¬R_a ∨ ¬R_b`; (4) vecinos fuertes (arista con ≥ 50 movimientos) no se priorizan a la
+  vez: `¬P_a ∨ ¬P_b`; (5) la prioridad bloquea el desvío al vecino fuerte: `¬P_a ∨ ¬R_b`. La condición de la
+  regla 1 sale de los datos, así que no es una variable. Las reglas 2 a 5 son supuestos de diseño del
+  modelo, no hechos medidos en el dataset.
+- **Instancia con el dataset actual:** bins urgentes `bin_2`, `bin_6` y `bin_9`; 16 variables y 45 cláusulas
+  (3, 8, 28, 2 y 4 por regla). Los 8 candidatos están en el mismo pasillo, por eso la regla 3 pesa tanto.
+- **Algoritmo:** asignación inicial aleatoria y, mientras haya una cláusula insatisfecha, se elige una y se
+  invierte una de sus dos variables al azar. Si la fórmula es satisfacible, el número esperado de
+  inversiones es ≤ n²; con rondas de 2n² inversiones se encuentra solución con probabilidad ≥ 1/2 por
+  ronda, así que con 20 rondas la probabilidad de fallar es ≤ 2⁻²⁰.
+- **Resultado:** el solver exacto dice que la fórmula es satisfacible (prioridad en `bin_2`, `bin_6` y
+  `bin_9`, sin desvíos). Papadimitriou (semilla 42) encuentra una solución en 14 inversiones y 1 ronda
+  (desvío a `bin_9`, prioridad en `bin_2`, `bin_4`, `bin_5` y `bin_6`), que satisface las 45 cláusulas. En
+  2.000 rondas independientes hicieron falta 8,6 inversiones en promedio (mediana 8, máximo 33), contra la
+  cota teórica n² = 256, y el 100 % terminó dentro de 2n² = 512 (garantía: al menos 50 %).
+- **Crecimiento con n** (fórmulas aleatorias satisfacibles, m = 3n cláusulas, 200 rondas por n): 14,8 / 34,1 /
+  73,0 / 171,4 inversiones en promedio con n = 8 / 16 / 32 / 64, es decir, entre 23 % y 4 % de n². La cota
+  n² es de peor caso y aquí queda muy holgada.
+- **Variante insatisfacible:** si se fuerza el desvío a `bin_2` y `bin_6` (mismo pasillo), el solver exacto
+  responde "insatisfacible" y Papadimitriou se rinde tras 20 rondas (10.240 inversiones): puede encontrar una
+  solución cuando existe, pero no puede demostrar que no hay.
+- **Pruebas:** `python -m unittest tests.test_randomized_2sat -v`
+
 
 *(pendiente — comandos de las demás tareas de `unit3/`)*
 
@@ -476,20 +507,21 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
   - [x] Task 3 — Universal Hashing
   - [x] Task 4 — Hash Table Operations
   - [x] Task 5 — Probability Analysis
-  - [ ] Demás tareas
+  - [ ] Task 6 - Dashboard
 - [ ] Unit 2 — tareas
   - [x] Task 1 — Stream Model & Query Design
   - [x] Task 2 — Bloom Filter
   - [x] Task 3 — Stream Sampling
   - [x] Task 4 — Distinct Count
   - [x] Task 5 — Frequency Moments
-  - [ ] Demás tareas
+  - [x] Task 6 - Dashboard
 - [ ] Unit 3 — tareas
   - [x] Task 1 — DTMC Construction & State Classification
   - [x] Task 2 — Stationary Distribution
   - [x] Task 3 — PageRank
   - [x] Task 4 — Random Walk
-  - [ ] Demás tareas
+  - [x] Task 5 — Randomized 2-SAT
+  - [ ] Task 6 - Dashboard
 - [ ] Dashboards
   - [x] Unit 1 — Panel A
   - [ ] Unit 1 — Panel B y Panel C
