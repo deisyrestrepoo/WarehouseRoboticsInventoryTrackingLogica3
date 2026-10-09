@@ -323,6 +323,7 @@ todo el stream; aquí se cuenta todo con precisión porque solo hay 100 bins).
 | Task 1 — DTMC Construction & State Classification | `unit3/DTMCConstruction.py` | `python unit3/DTMCConstruction.py` |
 | Task 2 — Stationary Distribution | `unit3/StationaryDistribution.py` | `python unit3/StationaryDistribution.py` |
 | Task 3 — PageRank | `unit3/PageRank.py` | `python unit3/PageRank.py` |
+| Task 4 — Random Walk | `unit3/RandomWalk.py` | `python unit3/RandomWalk.py` |
 | Task 5 — Randomized 2-SAT | `unit3/Randomized2SAT.py` | `python unit3/Randomized2SAT.py` |
 
 
@@ -392,6 +393,31 @@ dependa de que la Task 2 de un compañero ya esté en el repo).
   `construir_matriz_google`, `analizar_convergencia` y `comparar_rankings`.
 - **Pruebas:** `python -m unittest tests.test_pagerank -v`
 
+La Task 4 simula una **caminata aleatoria perezosa** sobre la cadena de la Task 1 y comprueba que la
+fracción de pasos que el robot pasa en cada bin se acerca a la probabilidad estacionaria teórica πᵢ. En
+cada paso el robot se queda donde está con probabilidad 1/2 (self-loop) y se mueve según `M` con
+probabilidad 1/2; la matriz es `L = (I + M)/2`.
+
+- **Por qué perezosa:** `π·L = π` (la misma π), y `L` siempre es aperiódica. En un grafo bipartito (periodo
+  2) la caminata simple alterna entre los dos lados y la distribución en el paso `t` nunca converge; con
+  pereza sí. En un ciclo de 4 bins, la variación total contra π se queda en 0,5 para siempre con la
+  caminata simple y baja a 0,25 / 0,125 / 0,016 / 0,0005 en los pasos 1 / 2 / 5 / 10 con la perezosa. En el
+  grafo del proyecto la caminata simple ya es aperiódica (periodo 1, hay 42 self-loops), así que aquí la
+  pereza solo agrega costo.
+- **Verificación con 50.000 pasos** (semilla 42, desde `bin_100`, el bin menos probable): error L1 0,0541,
+  error máximo por bin 0,0031 (`bin_4`), error relativo promedio de 4,7 % en los 10 bins de mayor π, y esos
+  10 bins coinciden con los 10 más visitados de la simulación (p. ej. `bin_1`: π = 12,58 %, frecuencia
+  12,57 %; `bin_2`: 7,20 % contra 7,04 %).
+- **Error contra pasos** (promedio de 20 semillas): error L1 0,385 / 0,177 / 0,123 / 0,055 / 0,028 con
+  1.000 / 5.000 / 10.000 / 50.000 / 200.000 pasos. El producto error·√T se mantiene entre 12,2 y 12,5, es
+  decir, el error baja como 1/√T.
+- **Costo de la pereza:** distancia de variación total entre π y la distribución exacta del paso `t`
+  partiendo de `bin_100`: 6,2·10⁻⁵ (simple) contra 0,118 (perezosa) en `t` = 5, 4,9·10⁻¹⁰ contra 7,1·10⁻³ en
+  `t` = 10 y 6·10⁻¹³ contra 1,7·10⁻⁵ en `t` = 20. La perezosa tarda aproximadamente el doble.
+- **Funciones reutilizables:** `hacer_perezosa`, `distribucion_estacionaria`, `simular_caminata`,
+  `comparar_con_pi`, `error_vs_pasos` y `variacion_total_por_paso`.
+- **Pruebas:** `python -m unittest tests.test_random_walk -v`
+
 
 La Task 5 resuelve con el **algoritmo de Papadimitriou** un 2-SAT de restricciones de reabastecimiento
 sobre los 8 bins de mayor π y lo compara con un solver exacto (grafo de implicaciones y componentes
@@ -422,6 +448,7 @@ fuertemente conexas). Cada bin candidato `b` aporta dos variables: `R_b` (se des
   responde "insatisfacible" y Papadimitriou se rinde tras 20 rondas (10.240 inversiones): puede encontrar una
   solución cuando existe, pero no puede demostrar que no hay.
 - **Pruebas:** `python -m unittest tests.test_randomized_2sat -v`
+
 
 *(pendiente — comandos de las demás tareas de `unit3/`)*
 
@@ -480,20 +507,21 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
   - [x] Task 3 — Universal Hashing
   - [x] Task 4 — Hash Table Operations
   - [x] Task 5 — Probability Analysis
-  - [ ] Demás tareas
+  - [ ] Task 6 - Dashboard
 - [ ] Unit 2 — tareas
   - [x] Task 1 — Stream Model & Query Design
   - [x] Task 2 — Bloom Filter
   - [x] Task 3 — Stream Sampling
   - [x] Task 4 — Distinct Count
   - [x] Task 5 — Frequency Moments
-  - [ ] Demás tareas
+  - [x] Task 6 - Dashboard
 - [ ] Unit 3 — tareas
   - [x] Task 1 — DTMC Construction & State Classification
   - [x] Task 2 — Stationary Distribution
   - [x] Task 3 — PageRank
+  - [x] Task 4 — Random Walk
   - [x] Task 5 — Randomized 2-SAT
-  - [ ] Demás tareas
+  - [ ] Task 6 - Dashboard
 - [ ] Dashboards
   - [x] Unit 1 — Panel A
   - [ ] Unit 1 — Panel B y Panel C
