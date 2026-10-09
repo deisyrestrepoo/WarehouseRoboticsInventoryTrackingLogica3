@@ -240,6 +240,7 @@ scans con `is_low_stock` y `p̂` es la fracción en una muestra uniforme de `n` 
 | --- | --- | --- |
 | Task 1 — Stream Model & Query Design | `unit2/StreamModelQueryDesign.py` | `python unit2/StreamModelQueryDesign.py` |
 | Task 2 — Bloom Filter | `unit2/BloomFilter.py` | `python unit2/BloomFilter.py` |
+| Task 3 — Stream Sampling | `unit2/StreamSampling.py` | `python unit2/StreamSampling.py` |
 | Task 4 — Distinct Count | `unit2/DistinctCount.py` | `python unit2/DistinctCount.py` |
 | Task 5 — Frequency Moments | `unit2/FrequencyMoments.py` | `python unit2/FrequencyMoments.py` |
 
@@ -250,6 +251,29 @@ pasillo en los últimos 300 scans (ventana deslizante) y SKUs distintos vistos e
 La Task 2 arma un filtro de Bloom con los SKUs ya alertados en bajo stock, para no generar
 tickets de reabastecimiento duplicados. Imprime la tasa de falsos positivos empírica contra
 la teórica, y un barrido con distintos tamaños de filtro para ver cómo se acercan ambas.
+
+
+La Task 3 estima, con una muestra de tamaño fijo del stream, la fracción de SKUs que están
+*actualmente* en bajo stock (el estado del último scan de cada SKU visto hasta ese momento) y la
+compara con la fracción real. Usa tres tamaños de muestra: 100, 300 y 900.
+
+- **Reservoir sampling de scans (Algoritmo R):** muestra uniforme de `k` scans. Los SKUs que más
+  se escanean aparecen más veces, así que la muestra tiene menos de `k` SKUs distintos y la
+  fracción por SKU puede salir sesgada.
+- **Muestreo de SKUs por hash (bottom-k):** guarda los `k` SKUs de menor valor de hash y actualiza
+  su estado con cada scan que llega. Es uniforme sobre los SKUs distintos, por lo que
+  `p̂ = SKUs en bajo stock de la muestra / k` es insesgado, con error estándar
+  `√( p(1−p)/k · (N−k)/(N−1) )` (corrección por población finita).
+- **Resultado con el dataset actual** (10.000 scans, 1.900 SKUs, fracción real 0,1158; 100
+  repeticiones con semillas distintas). Muestreo de SKUs, para `k` = 100 / 300 / 900: desviación
+  empírica 0,0276 / 0,0170 / 0,0078 contra 0,0312 / 0,0170 / 0,0077 teórica, y el intervalo de
+  confianza del 95 % contiene el valor real el 97 / 95 / 94 % de las veces. Reservoir de scans:
+  desviación 0,0294 / 0,0194 / 0,0109, sesgo +0,006 / +0,005 / +0,001 (pequeño, del orden del
+  ruido del experimento) y solo 94 / 252 / 619 SKUs distintos en la muestra.
+- **Cómo leerlo:** pasar de `k` = 100 a 900 baja el error típico de unos 3 puntos porcentuales a
+  menos de 1. Con 10.000 scans y 1.900 SKUs ambos muestreos funcionan; la ventaja del muestreo de
+  SKUs es que su error se puede calcular de antemano y no depende de cuántas veces se escanea cada SKU.
+- **Pruebas:** `python -m unittest tests.test_stream_sampling -v`
 
 La Task 4 estima cuántos SKUs distintos se han escaneado hoy con **Flajolet-Martin** y 10 funciones
 de hash, sin guardar los SKUs: por cada función se conserva un bitmap con las cantidades de ceros
@@ -430,6 +454,7 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
 - [ ] Unit 2 — tareas
   - [x] Task 1 — Stream Model & Query Design
   - [x] Task 2 — Bloom Filter
+  - [x] Task 3 — Stream Sampling
   - [x] Task 4 — Distinct Count
   - [x] Task 5 — Frequency Moments
   - [ ] Demás tareas
