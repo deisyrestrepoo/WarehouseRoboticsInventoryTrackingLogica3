@@ -241,6 +241,7 @@ scans con `is_low_stock` y `p̂` es la fracción en una muestra uniforme de `n` 
 | Task 1 — Stream Model & Query Design | `unit2/StreamModelQueryDesign.py` | `python unit2/StreamModelQueryDesign.py` |
 | Task 2 — Bloom Filter | `unit2/BloomFilter.py` | `python unit2/BloomFilter.py` |
 | Task 3 — Stream Sampling | `unit2/StreamSampling.py` | `python unit2/StreamSampling.py` |
+| Task 4 — Distinct Count | `unit2/DistinctCount.py` | `python unit2/DistinctCount.py` |
 | Task 5 — Frequency Moments | `unit2/FrequencyMoments.py` | `python unit2/FrequencyMoments.py` |
 
 La Task 1 simula el stream de scans y responde dos consultas: SKUs en bajo stock por
@@ -250,6 +251,7 @@ pasillo en los últimos 300 scans (ventana deslizante) y SKUs distintos vistos e
 La Task 2 arma un filtro de Bloom con los SKUs ya alertados en bajo stock, para no generar
 tickets de reabastecimiento duplicados. Imprime la tasa de falsos positivos empírica contra
 la teórica, y un barrido con distintos tamaños de filtro para ver cómo se acercan ambas.
+
 
 La Task 3 estima, con una muestra de tamaño fijo del stream, la fracción de SKUs que están
 *actualmente* en bajo stock (el estado del último scan de cada SKU visto hasta ese momento) y la
@@ -272,6 +274,26 @@ compara con la fracción real. Usa tres tamaños de muestra: 100, 300 y 900.
   menos de 1. Con 10.000 scans y 1.900 SKUs ambos muestreos funcionan; la ventaja del muestreo de
   SKUs es que su error se puede calcular de antemano y no depende de cuántas veces se escanea cada SKU.
 - **Pruebas:** `python -m unittest tests.test_stream_sampling -v`
+
+La Task 4 estima cuántos SKUs distintos se han escaneado hoy con **Flajolet-Martin** y 10 funciones
+de hash, sin guardar los SKUs: por cada función se conserva un bitmap con las cantidades de ceros
+finales que aparecieron en los hashes, `R` es la posición de su primer cero y el conteo se
+estima como `2^(promedio de R) / φ`, con `φ ≈ 0,77351`. Los SKUs repetidos no cambian los bitmaps. La
+desviación relativa esperada es ≈ `0,78 / √m` (Flajolet y Martin, 1985), es decir, ≈ 25 % con `m` = 10.
+
+- **Resultado con el dataset actual** (semilla 42): al final del stream hay 1.900 SKUs distintos y
+  la estimación es 1.521 (−20,0 %); la variante con la mediana de las 10 estimaciones da 1.324. El
+  estado ocupa 80 bytes (10 enteros de 64 bits), frente a guardar los 1.900 SKUs.
+- **Teórico vs. empírico** (100 semillas distintas): con `m` = 10 la desviación relativa empírica
+  es 25,6 % contra 24,7 % teórica y el sesgo es −3,1 %. Con `m` = 1 / 5 / 20 / 50 la desviación
+  empírica es 101,5 / 35,0 / 18,2 / 10,8 % contra 78,0 / 34,9 / 17,4 / 11,0 % teórica.
+- **Cómo leerlo:** la estimación sube en escalones, porque depende de potencias de 2 promediadas, y
+  por eso a lo largo del día aparecen tramos planos. Con solo 10 funciones el error típico ronda
+  el 25 %; no es un fallo, es el costo de usar tan poca memoria. Más funciones de hash lo reducen
+  como `1/√m`.
+- **Funciones reutilizables** (por ejemplo, para el Panel B del dashboard): `ContadorFlajoletMartin`,
+  `ConsultaSKUsDistintosFM`, `evolucion` y `experimento`.
+- **Pruebas:** `python -m unittest tests.test_distinct_count -v`
 
 La Task 5 calcula **F0, F1 y F2 exactos** sobre los conteos de scans por `bin_location`
 (a diferencia del Flajolet-Martin de la Task 4, que *estima* F0 sobre `sku` sin guardar
@@ -433,6 +455,7 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
   - [x] Task 1 — Stream Model & Query Design
   - [x] Task 2 — Bloom Filter
   - [x] Task 3 — Stream Sampling
+  - [x] Task 4 — Distinct Count
   - [x] Task 5 — Frequency Moments
   - [ ] Demás tareas
 - [ ] Unit 3 — tareas
