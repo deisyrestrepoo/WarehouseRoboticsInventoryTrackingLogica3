@@ -16,6 +16,8 @@ unidad = st.sidebar.radio("Elegir dashboard", ["Unit 1", "Unit 2", "Unit 3"])
 if unidad == "Unit 1":
     dashboard_unit1.panel_a()
     dashboard_unit1.panel_b()
+    st.divider()
+    dashboard_unit1.panel_c()
 elif unidad == "Unit 2":
     dashboard_unit2.panel_a()
     st.divider()

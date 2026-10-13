@@ -454,15 +454,20 @@ fuertemente conexas). Cada bin candidato `b` aporta dos variables: `R_b` (se des
 
 ## Ejecutar el dashboard
 
-Dashboard de la Unit 1 (por ahora con el Panel A):
+Dashboard de la Unit 1 (Panel A, Panel B y Panel C):
 
 ```bash
 streamlit run dashboard_unit1.py
 ```
 
 Se abre en el navegador. El Panel A muestra la cantidad de scans por bucket con chaining y con
-Power of Two Choices, y un deslizador permite cambiar el número de buckets. El Panel B y el
-Panel C se agregan cuando estén listas sus tareas.
+Power of Two Choices, y un deslizador permite cambiar el número de buckets. El Panel B compara
+el reservoir sampling (Task 2) contra el conteo exacto: estimación con su IC 95 % para el `k` y
+la semilla elegidos, tiempo de ejecución de cada método y error según `k`. El Panel C es el
+tablero de alertas de bajo stock en vivo: un deslizador mueve la posición en el stream y la tabla
+muestra los SKUs cuyo último scan está en bajo stock (SKU, bin y cantidad), ordenados por
+urgencia (menor cantidad primero y, a igual cantidad, el scan más reciente). Además permite
+consultar el historial de un SKU con el índice de hash universal de la Task 3.
 
 Dashboard de la Unit 2 (Panel A y Panel C completos; en el Panel B falta superponer la
 estimación de Flajolet-Martin, Task 4):
@@ -524,7 +529,8 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
   - [ ] Task 6 - Dashboard
 - [ ] Dashboards
   - [x] Unit 1 — Panel A
-  - [ ] Unit 1 — Panel B y Panel C
+  - [x] Unit 1 — Panel B
+  - [x] Unit 1 — Panel C
   - [x] Unit 2 — Panel A y Panel B
   - [x] Unit 2 — Panel C
   - [x] Unit 3 — Panel A
