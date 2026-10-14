@@ -482,7 +482,7 @@ distintos (falta superponer la estimación de Flajolet-Martin). El Panel C es un
 alertas de bajo stock en vivo, ordenado por urgencia, con un slider para moverse por el stream,
 más las métricas F0/F1/F2 (Task 5) y el top 10 de bins con más tráfico, calculados sobre los mismos scans que muestra el slider.
 
-Dashboard de la Unit 3 (Panel A completo; Panel D pendiente de la Task 2 y la Task 3):
+Dashboard de la Unit 3 (Panel A y Panel D):
 
 ```bash
 streamlit run dashboard_unit3.py
@@ -491,6 +491,11 @@ streamlit run dashboard_unit3.py
 El Panel A muestra el grafo de movimientos (bins, movimientos distintos, self-loops,
 componentes fuertemente conexas), el ranking de bins "hub" contra "poco visitados", y un
 explorador que muestra los destinos más probables desde cualquier bin elegido.
+El Panel D compara el PageRank de la Task 3 (con un deslizador para el factor de amortiguación `d`)
+contra el ranking por conteo crudo de scans por bin: métricas de convergencia y de coincidencia
+(top-n y Spearman), barras del top por PageRank con la tasa de bajo stock de cada bin encima, un
+gráfico de todos los bins (peso por conteo contra peso por PageRank, coloreado por bajo stock) y una
+tabla completa con filtro de bins sobre la tasa global de bajo stock.
 
 Selector que reúne los tres dashboards en un solo lugar, con un menú en la barra lateral:
 
@@ -534,6 +539,6 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
   - [x] Unit 2 — Panel A y Panel B
   - [x] Unit 2 — Panel C
   - [x] Unit 3 — Panel A
-  - [ ] Unit 3 — Panel D (falta PageRank y distribución estacionaria)
+  - [x] Unit 3 — Panel D
   - [x] Selector `main.py`
 - [ ] Informe
