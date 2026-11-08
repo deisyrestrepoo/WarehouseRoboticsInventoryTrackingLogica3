@@ -452,6 +452,45 @@ fuertemente conexas). Cada bin candidato `b` aporta dos variables: `R_b` (se des
 
 *(pendiente — comandos de las demás tareas de `unit3/`)*
 
+**Unit 5**
+
+| Tarea | Archivo | Comando |
+| --- | --- | --- |
+| Task 2 — Cosine LSH with Random Hyperplanes | `unit5/CosineLSH.py` | `python unit5/CosineLSH.py` |
+
+La Task 2 arma **firmas de hiperplano aleatorio** para buscar tramos de robot (robot
+chunks) parecidos sin comparar cada par contra todos los demas.
+
+- **Los vectores:** un tramo (chunk) son `LONGITUD_CHUNK` = 8 scans consecutivos de un
+  mismo robot (1.239 chunks con el dataset actual — la tarea pide >= 1.000). El vector
+  de un chunk es su participación por bin (cuenta del bin / 8) más `avg_quantity` y
+  `low_stock_frac` del tramo, estandarizados (z-score) sobre todos los chunks — 102
+  dimensiones en total. Esta parte replica lo que pide la Task 1 de esta unidad, para
+  que esta tarea no dependa de que ya esté en el repo.
+- **La firma:** con n hiperplanos aleatorios (cada coordenada ~ N(0,1)), el bit i de la
+  firma es 1 si el vector queda del lado positivo del hiperplano i. Para dos vectores
+  cualquiera, la probabilidad de que un hiperplano los separe es exactamente
+  `θ/180` (θ = ángulo real entre ellos, en grados); por eso la fracción de bits donde
+  coinciden sus firmas estima `1 - θ/180`.
+- **Verificación con el dataset actual** (1.000 pares al azar, n = 16/32/64/128): el
+  error promedio entre la fracción empírica y la teórica baja de forma monótona con n
+  — 0,1045 / 0,0680 / 0,0415 / 0,0299 — como predice la teoría (la varianza de la
+  fracción de bits coincidentes baja como `1/n`).
+- **Indice por bandas:** con n=128 (el más largo de los 4), la firma se parte en 16
+  bandas de 8 bits; dos chunks son candidatos si coinciden EXACTO en al menos una
+  banda. Para 50 consultas al azar se compara el top-5 por LSH (coseno exacto solo
+  sobre los candidatos) contra el top-5 por fuerza bruta (coseno exacto sobre los
+  1.238 chunks restantes).
+- **Resultado:** recall@5 = 94,4 % en promedio, examinando 381,5 candidatos de 1.238
+  en promedio — un 69,2 % menos comparaciones que la fuerza bruta, con una pérdida de
+  precisión chica.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `cargar_tramos_y_vectores`,
+  `firma`, `construir_indice_bandas` y `experimento_recall`.
+- **Pruebas:** `python -m unittest tests.test_cosine_lsh -v`
+
+*(pendiente — comandos de las demás tareas de `unit5/`)*
+
+
 ## Ejecutar el dashboard
 
 Dashboard de la Unit 1 (Panel A, Panel B y Panel C):
@@ -532,6 +571,9 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
   - [x] Task 4 — Random Walk
   - [x] Task 5 — Randomized 2-SAT
   - [ ] Task 6 - Dashboard
+- [ ] Unit 5 — tareas
+  - [x] Task 2 — Cosine LSH with Random Hyperplanes
+  - [ ] Demás tareas
 - [ ] Dashboards
   - [x] Unit 1 — Panel A
   - [x] Unit 1 — Panel B
