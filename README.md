@@ -452,6 +452,90 @@ fuertemente conexas). Cada bin candidato `b` aporta dos variables: `R_b` (se des
 
 *(pendiente — comandos de las demás tareas de `unit3/`)*
 
+**Unit 4**
+
+| Tarea | Archivo | Comando |
+| --- | --- | --- |
+| Task 2 — MapReduce Algorithm | `unit4/MapReduceAlgorithm.py` | `python unit4/MapReduceAlgorithm.py` |
+| Task 5 — Parallel Efficiency | `unit4/ParallelEfficiency.py` | `python unit4/ParallelEfficiency.py` |
+
+La Task 2 agrupa los SKUs en **k=3 clusters** (S12 — K-Means) sobre tres características
+calculadas con un job de MapReduce sobre los scans crudos: `avg_quantity`, `low_stock_frac` y
+`scan_count` por SKU. Cada iteración de K-Means se escribe a su vez como un Map (asignar cada
+SKU al centroide más cercano) + un Reduce (promediar los puntos de cada cluster).
+
+- **Job 1 (agregar por SKU):** Map emite `(sku, (quantity, is_low_stock, 1))` por cada scan;
+  Reduce junta por SKU y calcula los tres promedios/conteos.
+- **Por qué estandarizar:** `scan_count` va de 1 a 188 (muy sesgado, como el tráfico de bins
+  de la Unidad 3), `avg_quantity` de 0 a 52 y `low_stock_frac` de 0 a 1 — en escalas muy
+  distintas. Sin estandarizar (z-score), la distancia euclidiana la domina casi por completo
+  `scan_count` y K-Means termina agrupando solo por eso.
+- **Sensible al punto de partida:** con una sola corrida, semillas distintas daban resultados
+  distintos — algunas encontraban el grupo pequeño de SKUs de altísima rotación, otras lo
+  disolvían dentro de un cluster más grande. Por eso se corre K-Means 10 veces con semillas
+  distintas y se usa la de menor inercia (WCSS), la práctica estándar. Con 10 reinicios el
+  resultado quedó idéntico sin importar la semilla de arranque.
+- **Etiquetas de negocio:** no se asignan por un índice fijo (el orden de los clusters que da
+  K-Means es arbitrario), sino por los promedios de cada cluster: el de mayor `low_stock_frac`
+  es "crítico", de los que quedan el de mayor `scan_count` es "rotación rápida", y el último es
+  "stock estable".
+- **Resultado con el dataset actual** (1.900 SKUs, mejor de 10 reinicios, inercia = 2.360,9):
+  **stock estable** (1.630 SKUs, 85,8 %) con `avg_quantity` = 28,76 y `low_stock_frac` = 0,003;
+  **crítico** (258 SKUs, 13,6 %) con `avg_quantity` = 3,33 y `low_stock_frac` = 0,811; y
+  **rotación rápida** (solo 12 SKUs, 0,6 %) con `scan_count` = 78,58 en promedio — muy por
+  encima del promedio general de 5,26 scans por SKU.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `agregar_por_sku`, `kmeans`,
+  `caracterizar_clusters` y `etiquetar_clusters`.
+- **Pruebas:** `python -m unittest tests.test_mapreduce_algorithm -v`
+
+
+La Task 5 (S13 — Scaling on Balanced Keys) corre el pipeline de la Task 1 (agrupar los
+scans de cada robot por `stream_seq` y contar movimientos consecutivos entre bins) con
+P = 1, 2, 4, 8 workers sobre 2 tamaños de dataset, y mide el tiempo real (wall-clock) para
+calcular el speedup `S_P = T_1/T_P` y la eficiencia `E_P = S_P/P`.
+
+- **Partición por localidad de datos, no por pickling:** la primera versión reparta los
+  scans pasándolos como argumento a los workers (o haciendo que cada uno releyera el
+  dataset completo); las dos dieron tiempos **peores** con más workers, en cualquier
+  tamaño de datos — mover o releer los datos cuesta más que contarlos. La solución: el
+  dataset se parte una sola vez en 8 archivos (shards) por `hash(robot_id) % 8` — las
+  mismas claves balanceadas que pide la tarea —, y cada worker lee **solo** sus propios
+  shards del disco.
+- **Pool "tibio", no uno nuevo por corrida:** levantar un `multiprocessing.Pool` en Windows
+  arranca procesos de Python desde cero y cuesta cientos de milisegundos por worker — más
+  que todo este pipeline tan liviano. Por eso se mide aparte el costo de arranque (una sola
+  vez, informativo) y el tiempo de "estado estable" (el mínimo de varias corridas
+  reutilizando el mismo Pool ya arrancado); el speedup y la eficiencia se calculan sobre el
+  estado estable, la comparación justa entre P=1 y P>1.
+- **Resultado con el dataset actual** (máquina de 4 núcleos lógicos; P>4 sobresuscribe la
+  CPU):
+
+  | Tamaño | P | tiempo estable (s) | speedup | eficiencia |
+  | --- | ---: | ---: | ---: | ---: |
+  | 1x (10.000 scans) | 1 | 0,065 | 1,00 | 100 % |
+  | 1x | 2 | 0,054 | 1,19 | 59,5 % |
+  | 1x | 4 | 0,045 | 1,45 | 36,3 % |
+  | 1x | 8 | 0,051 | 1,27 | 15,8 % |
+  | 20x (200.000 scans) | 1 | 1,400 | 1,00 | 100 % |
+  | 20x | 2 | 0,813 | 1,72 | 86,2 % |
+  | 20x | 4 | 0,660 | 2,12 | 53,0 % |
+  | 20x | 8 | 0,879 | 1,59 | 19,9 % |
+
+- **Dónde cae la eficiencia:** el speedup sube hasta P=4 y **cae** en P=8 en los dos
+  tamaños — esta máquina solo tiene 4 núcleos físicos, así que P=8 reparte el trabajo
+  entre más procesos de los que la CPU puede correr a la vez (sobresuscripción). También
+  se ve que la eficiencia es mejor con más datos (20x) que con menos (1x) en cada P: el
+  costo fijo de repartir y combinar el trabajo pesa menos cuando hay más cómputo real que
+  amortizarlo (ninguna corrida llega al 100 % de eficiencia en P>1 porque ese costo fijo
+  nunca desaparece del todo).
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `escribir_shards`,
+  `mapper_shards`, `medir_con_pool` y `experimento`.
+- **Pruebas:** `python -m unittest tests.test_parallel_efficiency -v`
+
+
+*(pendiente — comandos de las demás tareas de `unit4/`)*
+
+
 **Unit 5**
 
 | Tarea | Archivo | Comando |
@@ -571,9 +655,12 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
   - [x] Task 4 — Random Walk
   - [x] Task 5 — Randomized 2-SAT
   - [ ] Task 6 - Dashboard
+- [ ] Unit 4 — tareas
+  - [x] Task 2 — MapReduce Algorithm
+  - [x] Task 5 — Parallel Efficiency
+  - [ ] Demás tareas
 - [ ] Unit 5 — tareas
   - [x] Task 2 — Cosine LSH with Random Hyperplanes
-  - [ ] Demás tareas
 - [ ] Dashboards
   - [x] Unit 1 — Panel A
   - [x] Unit 1 — Panel B
