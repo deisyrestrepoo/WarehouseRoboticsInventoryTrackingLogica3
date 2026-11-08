@@ -452,6 +452,44 @@ fuertemente conexas). Cada bin candidato `b` aporta dos variables: `R_b` (se des
 
 *(pendiente — comandos de las demás tareas de `unit3/`)*
 
+**Unit 4**
+
+| Tarea | Archivo | Comando |
+| --- | --- | --- |
+| Task 2 — MapReduce Algorithm | `unit4/MapReduceAlgorithm.py` | `python unit4/MapReduceAlgorithm.py` |
+
+La Task 2 agrupa los SKUs en **k=3 clusters** (S12 — K-Means) sobre tres características
+calculadas con un job de MapReduce sobre los scans crudos: `avg_quantity`, `low_stock_frac` y
+`scan_count` por SKU. Cada iteración de K-Means se escribe a su vez como un Map (asignar cada
+SKU al centroide más cercano) + un Reduce (promediar los puntos de cada cluster).
+
+- **Job 1 (agregar por SKU):** Map emite `(sku, (quantity, is_low_stock, 1))` por cada scan;
+  Reduce junta por SKU y calcula los tres promedios/conteos.
+- **Por qué estandarizar:** `scan_count` va de 1 a 188 (muy sesgado, como el tráfico de bins
+  de la Unidad 3), `avg_quantity` de 0 a 52 y `low_stock_frac` de 0 a 1 — en escalas muy
+  distintas. Sin estandarizar (z-score), la distancia euclidiana la domina casi por completo
+  `scan_count` y K-Means termina agrupando solo por eso.
+- **Sensible al punto de partida:** con una sola corrida, semillas distintas daban resultados
+  distintos — algunas encontraban el grupo pequeño de SKUs de altísima rotación, otras lo
+  disolvían dentro de un cluster más grande. Por eso se corre K-Means 10 veces con semillas
+  distintas y se usa la de menor inercia (WCSS), la práctica estándar. Con 10 reinicios el
+  resultado quedó idéntico sin importar la semilla de arranque.
+- **Etiquetas de negocio:** no se asignan por un índice fijo (el orden de los clusters que da
+  K-Means es arbitrario), sino por los promedios de cada cluster: el de mayor `low_stock_frac`
+  es "crítico", de los que quedan el de mayor `scan_count` es "rotación rápida", y el último es
+  "stock estable".
+- **Resultado con el dataset actual** (1.900 SKUs, mejor de 10 reinicios, inercia = 2.360,9):
+  **stock estable** (1.630 SKUs, 85,8 %) con `avg_quantity` = 28,76 y `low_stock_frac` = 0,003;
+  **crítico** (258 SKUs, 13,6 %) con `avg_quantity` = 3,33 y `low_stock_frac` = 0,811; y
+  **rotación rápida** (solo 12 SKUs, 0,6 %) con `scan_count` = 78,58 en promedio — muy por
+  encima del promedio general de 5,26 scans por SKU.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `agregar_por_sku`, `kmeans`,
+  `caracterizar_clusters` y `etiquetar_clusters`.
+- **Pruebas:** `python -m unittest tests.test_mapreduce_algorithm -v`
+
+*(pendiente — comandos de las demás tareas de `unit4/`)*
+
+
 ## Ejecutar el dashboard
 
 Dashboard de la Unit 1 (Panel A, Panel B y Panel C):
@@ -532,6 +570,9 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
   - [x] Task 4 — Random Walk
   - [x] Task 5 — Randomized 2-SAT
   - [ ] Task 6 - Dashboard
+- [ ] Unit 4 — tareas
+  - [x] Task 2 — MapReduce Algorithm
+  - [ ] Demás tareas
 - [ ] Dashboards
   - [x] Unit 1 — Panel A
   - [x] Unit 1 — Panel B
