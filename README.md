@@ -100,6 +100,8 @@ WarehouseRoboticsInventoryTrackingLogica3/
 ├── unit1/                 # tareas batch (Big Data, hashing, tabla hash, Chebyshev)
 ├── unit2/                 # tareas de streaming (Bloom Filter, Flajolet-Martin, F_k)
 ├── unit3/                 # tareas de cadenas de Markov (DTMC, estacionaria, PageRank, random walk, 2-SAT)
+├── unit4/                 # tareas de MapReduce (replication rate y reducer size)
+├── unit5/                 # tareas de similitud (shingles, MinHash, LSH)
 ├── dashboard_unit1.py     # dashboard de la Unidad 1
 ├── dashboard_unit2.py     # dashboard de la Unidad 2
 ├── dashboard_unit3.py     # dashboard de la Unidad 3
@@ -457,6 +459,7 @@ fuertemente conexas). Cada bin candidato `b` aporta dos variables: `R_b` (se des
 | Tarea | Archivo | Comando |
 | --- | --- | --- |
 | Task 2 — MapReduce Algorithm | `unit4/MapReduceAlgorithm.py` | `python unit4/MapReduceAlgorithm.py` |
+| Task 4 — Reducer Size & Replication Rate | `unit4/ReducerSizeReplication.py` | `python unit4/ReducerSizeReplication.py` |
 | Task 5 — Parallel Efficiency | `unit4/ParallelEfficiency.py` | `python unit4/ParallelEfficiency.py` |
 
 La Task 2 agrupa los SKUs en **k=3 clusters** (S12 — K-Means) sobre tres características
@@ -487,6 +490,35 @@ SKU al centroide más cercano) + un Reduce (promediar los puntos de cada cluster
 - **Funciones reutilizables** (por ejemplo, para el dashboard): `agregar_por_sku`, `kmeans`,
   `caracterizar_clusters` y `etiquetar_clusters`.
 - **Pruebas:** `python -m unittest tests.test_mapreduce_algorithm -v`
+
+La Task 4 simula en Python los dos jobs de MapReduce que construyen el grafo de movimientos
+(el de la Unit 3) y mide dos cosas de cada uno: la **replication rate** (r) y el **tamaño del
+reducer** (q) de la clave más cargada (hot key).
+
+- **Job 1 (aristas):** el Map emite `(robot_id, (stream_seq, bin_location, quantity,
+  is_low_stock))` y el Reduce ordena por `stream_seq` y cuenta los pares de bins
+  consecutivos. Da las mismas 3.954 aristas que `DTMCConstruction.py`.
+- **Job 2 (resumen por bin):** a partir de las aristas calcula `out_move_count`,
+  `in_move_count`, `net_flow`, `avg_quantity` y `low_stock_frac` por bin (100 bins).
+- **Replication rate:** Job 1 tiene r = 1,00, porque cada scan emite una sola tupla. Job 2
+  tiene r = 2,00, porque cada arista se emite dos veces, una por cada bin extremo.
+- **Hot key y q:** en Job 1 es `robot_3` con q = 543 scans. En Job 2 es `bin_1` con
+  q = 200 registros.
+- **Efecto del número de reducers (Job 1, particionado `hash(robot_id) % R`):**
+
+  | R | Carga máx. del reducer | % de los scans | Veces q |
+  | --- | --- | --- | --- |
+  | 1 | 10.000 | 100,0 % | 18,42x |
+  | 2 | 5.025 | 50,2 % | 9,25x |
+  | 4 | 2.990 | 29,9 % | 5,51x |
+  | 8 | 1.542 | 15,4 % | 2,84x |
+
+- **Lectura del resultado:** subir R reparte la carga, pero nunca baja de q = 543, porque
+  todos los registros de un mismo robot deben ir al mismo reducer. Con pocas claves
+  (20 robots) y R chico, además, varias claves comparten reducer: con R = 8 el reducer más
+  cargado no tiene a `robot_3`, sino a `robot_19`, `robot_11` y `robot_2` juntos (1.542
+  registros), mucho más que q.
+- **Tests:** `python -m unittest tests.test_reducer_size_replication -v` (9 pruebas).
 
 
 La Task 5 (S13 — Scaling on Balanced Keys) corre el pipeline de la Task 1 (agrupar los
@@ -541,6 +573,8 @@ calcular el speedup `S_P = T_1/T_P` y la eficiencia `E_P = S_P/P`.
 | Tarea | Archivo | Comando |
 | --- | --- | --- |
 | Task 2 — Cosine LSH with Random Hyperplanes | `unit5/CosineLSH.py` | `python unit5/CosineLSH.py` |
+| Task 3 — Shingling: Anchor-based Shingles | `unit5/AnchorShingles.py` | `python unit5/AnchorShingles.py` |
+| Task 4 — MinHash + Banding: Threshold Design | `unit5/MinHashBanding.py` | `python unit5/MinHashBanding.py` |
 
 La Task 2 arma **firmas de hiperplano aleatorio** para buscar tramos de robot (robot
 chunks) parecidos sin comparar cada par contra todos los demas.
@@ -571,6 +605,46 @@ chunks) parecidos sin comparar cada par contra todos los demas.
 - **Funciones reutilizables** (por ejemplo, para el dashboard): `cargar_tramos_y_vectores`,
   `firma`, `construir_indice_bandas` y `experimento_recall`.
 - **Pruebas:** `python -m unittest tests.test_cosine_lsh -v`
+
+La Task 3 compara dos formas de armar el conjunto de shingles de la `bin_sequence` de un chunk,
+con el mismo k: **consecutivos** (un shingle empieza en cada posición) y **anclados** (un shingle
+empieza solo donde hay un ancla y toma ese token más los k-1 siguientes). Las anclas son los 5
+bins con mayor PageRank de la Unit 3 (`unit3/PageRank.py`, d = 0,85): `bin_1` a `bin_5`.
+
+- **Chunks:** 1.000 chunks sintéticos en 10 clusters plantados (cada uno sigue una plantilla de
+  barrido por pasillos, con ruido y semilla fija). Con ellos se mide la separación entre clusters.
+  También se mide el tamaño del conjunto sobre los 1.239 chunks reales de `unit5/CosineLSH.py`.
+- **Métricas:** shingles distintos por chunk, chunks que quedan vacíos, Jaccard medio dentro y entre
+  clusters, AUC y precisión@5 de los vecinos por Jaccard.
+- **Resultado con k = 3:** el conjunto anclado es mucho más chico (2,1 contra 26,5 shingles por
+  chunk plantado; 1,9 contra 6,0 en chunks reales), pero pierde separación: AUC 0,668 contra 0,999
+  y precisión@5 de 0,448 contra 1,000.
+- **Lectura:** un chunk sin ningún ancla queda sin shingles (190 de 1.000 plantados, 109 de 1.239
+  reales con k = 3) y no se puede comparar. Las anclas ahorran memoria, pero solo sirven si los
+  patrones que se quieren distinguir pasan por los bins más visitados.
+- **Tests:** `python -m unittest tests.test_anchor_shingles -v` (8 pruebas).
+
+La Task 4 encuentra pares de chunks parecidos sin comparar los 499.500 pares. El **Map**
+calcula la firma MinHash de 100 valores de cada chunk (shingles k = 3) y emite sus `b` bandas;
+el **Reduce** agrupa por banda y los chunks que caen en el mismo cubo son pares candidatos. Corre
+con un Pool de 2 procesos, como el runner de `unit4/ParallelEfficiency.py`.
+
+- **Elección de (b, r), con b·r = 100:** falsos negativos en s = 0,8 ≤ 1 %, probabilidad de ser
+  candidato en s = 0,6 ≥ 95 %, y entre las que cumplen, la de r más grande (menos candidatos
+  falsos). Resultado: **b = 25, r = 4** (umbral aprox. 0,447; falsos negativos en s = 0,8:
+  0,00019 %; P(s = 0,6) = 96,9 %).
+- **Datos:** 1.000 chunks sintéticos en 10 clusters plantados, cada chunk con su propio nivel de
+  ruido; 22.994 pares con s ≥ 0,6 y 10.689 con s ≥ 0,8 (verdad de referencia por fuerza bruta).
+- **Resultado:** 37.771 pares candidatos de 499.500 (7,56 % de las comparaciones), recall 0,993
+  y precisión 0,604 sobre los pares con s ≥ 0,6; 0 % de falsos negativos en s ≥ 0,8.
+- **Teoría contra empírico:** la fracción de pares que resultan candidatos por rango de
+  similitud coincide con la curva 1 − (1 − s^r)^b (por ejemplo, 0,872 contra 0,879 teórico en
+  s de 0,5 a 0,6).
+- **Lectura de la precisión:** la mayoría de los candidatos "falsos" tienen s entre 0,2 y 0,6;
+  se descartan al calcular el Jaccard exacto solo sobre los candidatos.
+- **Alternativa:** (b = 20, r = 5) también cumple falsos negativos ≤ 1 %, con menos candidatos
+  (6,4 %) y recall 0,968, pero en s = 0,6 exacto solo garantiza 80 %.
+- **Tests:** `python -m unittest tests.test_minhash_banding -v` (12 pruebas).
 
 *(pendiente — comandos de las demás tareas de `unit5/`)*
 
@@ -634,33 +708,36 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
 ## Estado del proyecto
 
 - [x] Generador de datos
-- [ ] Unit 1 — tareas
+- [X] Unit 1 — tareas
   - [x] Task 1 — Big Data Context
   - [x] Task 2 — Randomized Algorithm
   - [x] Task 3 — Universal Hashing
   - [x] Task 4 — Hash Table Operations
   - [x] Task 5 — Probability Analysis
-  - [ ] Task 6 - Dashboard
-- [ ] Unit 2 — tareas
+  - [X] Task 6 - Dashboard
+- [X] Unit 2 — tareas
   - [x] Task 1 — Stream Model & Query Design
   - [x] Task 2 — Bloom Filter
   - [x] Task 3 — Stream Sampling
   - [x] Task 4 — Distinct Count
   - [x] Task 5 — Frequency Moments
   - [x] Task 6 - Dashboard
-- [ ] Unit 3 — tareas
+- [X] Unit 3 — tareas
   - [x] Task 1 — DTMC Construction & State Classification
   - [x] Task 2 — Stationary Distribution
   - [x] Task 3 — PageRank
   - [x] Task 4 — Random Walk
   - [x] Task 5 — Randomized 2-SAT
-  - [ ] Task 6 - Dashboard
+  - [X] Task 6 - Dashboard
 - [ ] Unit 4 — tareas
   - [x] Task 2 — MapReduce Algorithm
+  - [x] Task 4 — Reducer Size & Replication Rate
   - [x] Task 5 — Parallel Efficiency
   - [ ] Demás tareas
 - [ ] Unit 5 — tareas
   - [x] Task 2 — Cosine LSH with Random Hyperplanes
+  - [x] Task 3 — Shingling: Anchor-based Shingles
+  - [x] Task 4 — MinHash + Banding: Threshold Design
 - [ ] Dashboards
   - [x] Unit 1 — Panel A
   - [x] Unit 1 — Panel B
