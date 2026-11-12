@@ -1,0 +1,938 @@
+# Warehouse Robotics Inventory Tracking
+
+Práctica de Lógica y Representación 3 — Grupo 9.
+
+Sistema simulado de robots que escanean bins de inventario en un almacén.
+Incluye la Unidad 1 (análisis batch: algoritmos aleatorizados, hashing y
+probabilidad), la Unidad 2 (procesamiento de streams: Bloom filter,
+Flajolet-Martin y momentos de frecuencia) y la Unidad 3 (cadenas de Markov
+sobre el grafo de movimientos de los robots: clasificación de estados,
+distribución estacionaria, PageRank, random walk y 2-SAT).
+
+## Integrantes
+
+- Osorio Jiménez Diego Alejandro
+- Restrepo Higuita Alejandro
+- Restrepo Ospina Deisy Tatiana
+- Sánchez Santa Samuel
+
+## Requisitos
+
+- Python 3.11 o superior
+- pip
+- Git
+
+## Instalación
+
+1. Clonar el repositorio y entrar a la carpeta del proyecto:
+
+   ```bash
+   git clone https://github.com/deisyrestrepoo/WarehouseRoboticsInventoryTrackingLogica3.git
+   cd WarehouseRoboticsInventoryTrackingLogica3
+   ```
+
+2. Crear y activar el entorno virtual:
+
+   ```bash
+   python -m venv venv
+   ```
+
+   En Windows (PowerShell):
+
+   ```powershell
+   .\venv\Scripts\Activate.ps1
+   ```
+
+   En Mac/Linux:
+
+   ```bash
+   source venv/bin/activate
+   ```
+
+3. Instalar las dependencias:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+   Las dependencias principales son `streamlit`, `pandas` y `plotly`.
+
+> Todos los comandos siguientes se ejecutan desde la raíz del proyecto
+> (la carpeta `WarehouseRoboticsInventoryTrackingLogica3`).
+
+## Generar el dataset
+
+```bash
+python data/generador.py
+```
+
+Genera 10.000 scans simulados y los guarda en `data/dataset.json`. El
+generador usa una semilla fija (`42`), así que el dataset es idéntico en cada
+ejecución y los resultados del informe se pueden reproducir.
+
+Cada registro representa un scan de un robot y tiene estos campos:
+
+| Campo | Tipo | Descripción |
+| --- | --- | --- |
+| `scan_id` | string | Identificador único del scan |
+| `timestamp` | date | Momento del scan (ISO 8601) |
+| `robot_id` | string | Robot que hizo el scan |
+| `sku` | string | Código del producto |
+| `bin_location` | string | Ubicación del bin en la bodega |
+| `quantity` | int | Cantidad observada |
+| `is_low_stock` | boolean | Alerta de bajo stock (cantidad ≤ 5) |
+| `stream_seq` | int | Número de secuencia en el stream (Unit 2) |
+| `aisle` | string | Pasillo del bin (Unit 2) |
+
+Decisiones del generador:
+
+- 2.000 SKUs, 100 bins, 10 pasillos y 20 robots.
+- El pasillo se deriva del bin, así que cada bin siempre está en el mismo pasillo.
+- El tráfico es sesgado: unos pocos bins y SKUs se escanean mucho más que el resto.
+- Cada SKU tiene un nivel de stock base que varía poco entre scans.
+- Alrededor del 12 % de los scans quedan marcados como bajo stock.
+
+## Estructura del proyecto
+
+```text
+WarehouseRoboticsInventoryTrackingLogica3/
+├── data/                  # generador de datos, dataset, grafo (edges.json), resumen por nodo (nodes.json) y chunks de la Unit 5 (chunks.json)
+├── unit1/                 # tareas batch (Big Data, hashing, tabla hash, Chebyshev)
+├── unit2/                 # tareas de streaming (Bloom Filter, Flajolet-Martin, F_k)
+├── unit3/                 # tareas de cadenas de Markov (DTMC, estacionaria, PageRank, random walk, 2-SAT)
+├── unit4/                 # tareas de MapReduce (replication rate y reducer size)
+├── unit5/                 # tareas de similitud (shingles, MinHash, LSH)
+├── dashboard_unit1.py     # dashboard de la Unidad 1
+├── dashboard_unit2.py     # dashboard de la Unidad 2
+├── dashboard_unit3.py     # dashboard de la Unidad 3
+├── main.py                # selector de dashboards
+├── tests/                 # pruebas unitarias (python -m unittest discover -s tests)
+├── requirements.txt
+└── README.md
+```
+
+## Ejecutar las tareas
+
+Cada tarea se puede correr por separado desde la raíz del proyecto.
+
+**Unit 1**
+
+| Tarea | Archivo | Comando |
+| --- | --- | --- |
+| Task 1 — Big Data Context | `unit1/BigDataContext.py` | `python unit1/BigDataContext.py` |
+| Task 2 — Randomized Algorithm | `unit1/RandomizedAlgorithm.py` | `python unit1/RandomizedAlgorithm.py` |
+| Task 3 — Universal Hashing | `unit1/UniversalHashing.py` | `python unit1/UniversalHashing.py` |
+| Task 4 — Hash Table Operations | `unit1/HashTableOperations.py` | `python unit1/HashTableOperations.py` |
+| Task 5 — Probability Analysis | `unit1/ProbabilityAnalysis.py` | `python unit1/ProbabilityAnalysis.py` |
+
+La Task 1 pone el escenario en contexto de Big Data: estima cuántos scans por segundo genera la
+flota de robots y cuánto almacenamiento necesita el sistema, hoy y con un crecimiento de 10x
+de la red de bodegas.
+
+- **Throughput:** `(scans − 1) / duración del dataset`, porque `n` scans delimitan `n − 1`
+  intervalos. También lo reparte por robot.
+- **Almacenamiento:** mide los bytes promedio de un scan serializado como JSON compacto (UTF-8) y
+  proyecta `throughput × segundos × bytes por registro` a un día y a un año (GB = 2^30 bytes).
+- **Crecimiento 10x:** se multiplican por 10 los robots y, con ellos, el throughput y el
+  almacenamiento (cada robot conserva su ritmo de scans). La proyección es lineal.
+- **Resultado con el dataset actual** (10.000 scans, 20 robots): 1,00 scans/seg en total
+  (0,05 por robot) y 189 bytes por registro. Hoy son 86.400 scans y unos 0,015 GB por día
+  (31.536.000 scans y 5,5 GB por año). Con 10x son 10 scans/seg con 200 robots, 864.000 scans y
+  unos 0,15 GB por día (315.360.000 scans y 55,4 GB por año).
+- **Cómo leer el resultado:** el generador espacia los scans un segundo, así que la tasa total de
+  1,0 scans/seg sale de los timestamps sintéticos y no es una medición de una flota real. Los
+  bytes cuentan los 9 campos del dataset (los 7 del escenario más `stream_seq` y `aisle`) y no
+  incluyen índices, réplicas ni compresión, por lo que el almacenamiento real sería mayor.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `tasa_scans_por_segundo`,
+  `bytes_por_registro`, `proyectar` y `analisis`.
+- **Pruebas:** `python -m unittest tests.test_big_data_context -v`
+
+La Task 2 usa **reservoir sampling** (Algoritmo R) para estimar qué fracción de los SKUs está
+en bajo stock sin guardar todo el stream de scans, y compara la estimación contra el conteo
+exacto. Recorre los scans una sola vez y mantiene un reservorio de `k` scans; al final cada
+scan quedó en la muestra con la misma probabilidad `k/n`, así que la muestra es uniforme.
+
+- **Qué estima:** (1) la fracción de *scans* en bajo stock, con su error estándar (con
+  corrección por población finita) y un intervalo de confianza del 95 %; (2) la fracción de
+  *SKUs* en bajo stock, tomando el scan más reciente de cada SKU que apareció en la muestra.
+  La segunda puede tener sesgo, porque los SKUs que más se escanean tienen más probabilidad
+  de entrar a la muestra.
+- **Valor exacto de referencia:** se recorre todo el dataset y el último scan de cada SKU
+  se toma como su estado actual.
+- **Experimento:** tamaños de muestra `k` = 100, 250, 500, 1000 y 2000, con 200 repeticiones
+  cada uno (semillas distintas). Imprime el conteo exacto, el error absoluto promedio, la
+  desviación empírica contra la teórica, el porcentaje de veces que el intervalo del 95 %
+  contiene el valor real, el sesgo de la estimación por SKU y el tiempo de una pasada.
+- **Resultado con el dataset actual** (10.000 scans, 1.900 SKUs distintos): el conteo exacto
+  es 12,41 % de scans en bajo stock y 220 de 1.900 SKUs (11,58 %). Con `k` = 1000 el error
+  absoluto promedio es 0,008 y la desviación empírica (0,0100) coincide con la teórica
+  (0,0099). El sesgo de la estimación por SKU baja de +0,010 con `k` = 100 a casi 0 con
+  `k` = 2000. Muestrear no es más rápido que el conteo exacto en Python (unos 6 ms contra
+  4 ms); la ventaja es usar memoria O(k) y poder trabajar sobre un stream que no se puede
+  guardar.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `reservoir_sample`,
+  `conteo_exacto`, `estimar` y `experimento`.
+- **Pruebas:** `python -m unittest tests.test_randomized_algorithm -v`
+
+La Task 3 aplica **hash universal** sobre `sku` para armar el índice de búsqueda rápida del
+sistema de reabastecimiento y mide cuántas colisiones produce. La función es de la familia
+Carter-Wegman, `h(x) = ((a·x + b) mod P) mod m`, con `P = 2^61 − 1` y `a`, `b` aleatorios (la
+misma familia que usa `FuncionHash` en la Task 4). Para dos SKUs distintos la probabilidad de
+colisión es a lo sumo `1/m`, así que con `n` SKUs distintos se esperan como máximo `C(n,2)/m`
+pares en colisión, sin importar cómo sean los SKUs.
+
+- **Índice:** `IndiceHash` guarda, con chaining, la lista de posiciones de los scans de cada
+  SKU. Buscar un SKU solo revisa los SKUs de su bucket.
+- **Estudio de colisiones:** para tablas de 512, 1024, 2003, 2048, 4096 y 4099 buckets mide
+  los pares de SKUs distintos que caen en el mismo bucket y la carga del bucket más lleno. La
+  familia universal se promedia sobre 300 elecciones de `(a, b)` y se compara contra la cota
+  teórica `C(n,2)/m` y contra dos funciones ingenuas: suma de los códigos de los caracteres y
+  clave entera mod `m`.
+- **Benchmark de búsqueda:** construye el índice con los 10.000 scans (2003 buckets) y compara
+  buscar cada SKU con el índice contra recorrer todos los scans. Verifica que ambos devuelvan
+  las mismas posiciones.
+- **Resultado con el dataset actual** (10.000 scans, 1.900 SKUs distintos): el promedio de
+  pares en colisión de la familia universal sigue la cota (por ejemplo 894 contra 901 con
+  `m` = 2003, y 3.493 contra 3.524 con `m` = 512). La suma de caracteres es inutilizable:
+  produce 44.706 pares y un bucket con 70 SKUs sin importar `m`, porque solo genera 82 valores
+  distintos. Clave mod `m` reparte mejor que el promedio universal en estos datos (729 pares con
+  `m` = 2003), pero eso depende de la forma de los SKUs y no está garantizado; la ventaja de la
+  familia universal es la cota para cualquier conjunto de SKUs. El índice con 2003 buckets
+  queda con factor de carga 0,95, cadena máxima de 4 y unos 2 SKUs revisados por búsqueda;
+  busca en unos 3 µs contra unos 1.700 µs de la búsqueda lineal (unas 650 veces más rápido; los
+  tiempos varían según el equipo).
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `FuncionHashUniversal`,
+  `IndiceHash`, `tabla_colisiones` y `benchmark_busqueda`.
+- **Pruebas:** `python -m unittest tests.test_universal_hashing -v`
+
+La Task 4 construye una tabla hash con clave `bin_location` (100 buckets por defecto) y
+compara chaining contra Power of Two Choices. Imprime carga máxima y mínima, desviación
+estándar, buckets vacíos y registros revisados por búsqueda, y repite el experimento 30 veces
+con distintas funciones hash para promediar la carga máxima.
+
+La Task 5 usa la **desigualdad de Chebyshev** para acotar cuánto puede alejarse la tasa de bajo
+stock estimada con una muestra de la tasa real de toda la bodega. Si `p` es la fracción real de
+scans con `is_low_stock` y `p̂` es la fracción en una muestra uniforme de `n` scans, entonces
+`E[p̂] = p`, `Var(p̂) ≤ p(1 − p)/n` y
+
+`Pr[ |p̂ − p| ≥ ε ] ≤ p(1 − p) / (n · ε²)`
+
+- **Dos cotas:** una con la `p` real del dataset y otra de peor caso (`p(1 − p) ≤ 1/4`), útil
+  cuando `p` no se conoce de antemano.
+- **Muestra mínima:** despejando `n`, para una confianza `1 − δ` basta `n ≥ p(1 − p) / (ε² · δ)`.
+- **Comparación empírica:** con `ε` = 0,03 repite 2.000 veces el muestreo (semilla fija) para
+  `n` = 100, 250, 500, 1000 y 2000 y cuenta cuántas veces el error llega a `ε`.
+- **Resultado con el dataset actual** (10.000 scans): la tasa real de bajo stock es
+  `p` = 0,1241. La cota de Chebyshev con `p` es 1,00 / 0,483 / 0,242 / 0,121 / 0,060 y la
+  frecuencia empírica es 0,360 / 0,151 / 0,039 / 0,003 / 0,000 (para `n` = 100 / 250 / 500 /
+  1000 / 2000). La cota se cumple siempre, pero es conservadora: con `n` = 1000 acota en 12 %
+  un evento que ocurre el 0,3 % de las veces. El peor caso exige `n` = 2.778 para 90 % de
+  confianza y 5.556 para 95 %; con la `p` real bastan 1.208 y 2.416.
+- **Por qué sobra margen:** Chebyshev solo usa la varianza, sin suponer la forma de la
+  distribución. Además, las muestras se toman sin reemplazo, y eso reduce la varianza real
+  (corrección por población finita) por debajo de `p(1 − p)/n`, así que la cota sigue siendo
+  válida.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `tasa_real`, `cota_chebyshev`,
+  `muestra_minima`, `probabilidad_empirica` y `analisis`.
+- **Pruebas:** `python -m unittest tests.test_probability_analysis -v`
+
+**Unit 2**
+
+| Tarea | Archivo | Comando |
+| --- | --- | --- |
+| Task 1 — Stream Model & Query Design | `unit2/StreamModelQueryDesign.py` | `python unit2/StreamModelQueryDesign.py` |
+| Task 2 — Bloom Filter | `unit2/BloomFilter.py` | `python unit2/BloomFilter.py` |
+| Task 3 — Stream Sampling | `unit2/StreamSampling.py` | `python unit2/StreamSampling.py` |
+| Task 4 — Distinct Count | `unit2/DistinctCount.py` | `python unit2/DistinctCount.py` |
+| Task 5 — Frequency Moments | `unit2/FrequencyMoments.py` | `python unit2/FrequencyMoments.py` |
+
+La Task 1 simula el stream de scans y responde dos consultas: SKUs en bajo stock por
+pasillo en los últimos 300 scans (ventana deslizante) y SKUs distintos vistos en el día
+(conteo exacto, usado luego como referencia para Flajolet-Martin).
+
+La Task 2 arma un filtro de Bloom con los SKUs ya alertados en bajo stock, para no generar
+tickets de reabastecimiento duplicados. Imprime la tasa de falsos positivos empírica contra
+la teórica, y un barrido con distintos tamaños de filtro para ver cómo se acercan ambas.
+
+La Task 3 estima, con una muestra de tamaño fijo del stream, la fracción de SKUs que están
+*actualmente* en bajo stock (el estado del último scan de cada SKU visto hasta ese momento) y la
+compara con la fracción real. Usa tres tamaños de muestra: 100, 300 y 900.
+
+- **Reservoir sampling de scans (Algoritmo R):** muestra uniforme de `k` scans. Los SKUs que más
+  se escanean aparecen más veces, así que la muestra tiene menos de `k` SKUs distintos y la
+  fracción por SKU puede salir sesgada.
+- **Muestreo de SKUs por hash (bottom-k):** guarda los `k` SKUs de menor valor de hash y actualiza
+  su estado con cada scan que llega. Es uniforme sobre los SKUs distintos, por lo que
+  `p̂ = SKUs en bajo stock de la muestra / k` es insesgado, con error estándar
+  `√( p(1−p)/k · (N−k)/(N−1) )` (corrección por población finita).
+- **Resultado con el dataset actual** (10.000 scans, 1.900 SKUs, fracción real 0,1158; 100
+  repeticiones con semillas distintas). Muestreo de SKUs, para `k` = 100 / 300 / 900: desviación
+  empírica 0,0276 / 0,0170 / 0,0078 contra 0,0312 / 0,0170 / 0,0077 teórica, y el intervalo de
+  confianza del 95 % contiene el valor real el 97 / 95 / 94 % de las veces. Reservoir de scans:
+  desviación 0,0294 / 0,0194 / 0,0109, sesgo +0,006 / +0,005 / +0,001 (pequeño, del orden del
+  ruido del experimento) y solo 94 / 252 / 619 SKUs distintos en la muestra.
+- **Cómo leerlo:** pasar de `k` = 100 a 900 baja el error típico de unos 3 puntos porcentuales a
+  menos de 1. Con 10.000 scans y 1.900 SKUs ambos muestreos funcionan; la ventaja del muestreo de
+  SKUs es que su error se puede calcular de antemano y no depende de cuántas veces se escanea cada SKU.
+- **Pruebas:** `python -m unittest tests.test_stream_sampling -v`
+
+La Task 4 estima cuántos SKUs distintos se han escaneado hoy con **Flajolet-Martin** y 10 funciones
+de hash, sin guardar los SKUs: por cada función se conserva un bitmap con las cantidades de ceros
+finales que aparecieron en los hashes, `R` es la posición de su primer cero y el conteo se
+estima como `2^(promedio de R) / φ`, con `φ ≈ 0,77351`. Los SKUs repetidos no cambian los bitmaps. La
+desviación relativa esperada es ≈ `0,78 / √m` (Flajolet y Martin, 1985), es decir, ≈ 25 % con `m` = 10.
+
+- **Resultado con el dataset actual** (semilla 42): al final del stream hay 1.900 SKUs distintos y
+  la estimación es 1.521 (−20,0 %); la variante con la mediana de las 10 estimaciones da 1.324. El
+  estado ocupa 80 bytes (10 enteros de 64 bits), frente a guardar los 1.900 SKUs.
+- **Teórico vs. empírico** (100 semillas distintas): con `m` = 10 la desviación relativa empírica
+  es 25,6 % contra 24,7 % teórica y el sesgo es −3,1 %. Con `m` = 1 / 5 / 20 / 50 la desviación
+  empírica es 101,5 / 35,0 / 18,2 / 10,8 % contra 78,0 / 34,9 / 17,4 / 11,0 % teórica.
+- **Cómo leerlo:** la estimación sube en escalones, porque depende de potencias de 2 promediadas, y
+  por eso a lo largo del día aparecen tramos planos. Con solo 10 funciones el error típico ronda
+  el 25 %; no es un fallo, es el costo de usar tan poca memoria. Más funciones de hash lo reducen
+  como `1/√m`.
+- **Funciones reutilizables** (por ejemplo, para el Panel B del dashboard): `ContadorFlajoletMartin`,
+  `ConsultaSKUsDistintosFM`, `evolucion` y `experimento`.
+- **Pruebas:** `python -m unittest tests.test_distinct_count -v`
+
+La Task 5 calcula **F0, F1 y F2 exactos** sobre los conteos de scans por `bin_location`
+(a diferencia del Flajolet-Martin de la Task 4, que *estima* F0 sobre `sku` sin guardar
+todo el stream; aquí se cuenta todo con precisión porque solo hay 100 bins).
+
+- **F0** = bins distintos que recibieron algún scan. **F1** = total de scans. **F2** =
+  suma de (conteo por bin)². Una sola pasada sobre el stream, con un diccionario de
+  conteos (cabe en memoria sin problema).
+- **Número efectivo de bins:** F1²/F2. Vale F0 si el tráfico está parejo entre todos los
+  bins, y baja cuanto más se concentra en pocos (es el inverso del índice de Herfindahl,
+  una medida de concentración).
+- **Interpretación:** además de los momentos, se rankean los bins y los pasillos por
+  tráfico, para ver dónde se concentran los robots.
+- **Resultado con el dataset actual** (10.000 scans, 100 bins): F0 = 100, F1 = 10.000,
+  F2 = 3.347.136, número efectivo ≈ 29,9 de 100 — el tráfico está bastante concentrado.
+  `bin_1` es el más visitado con 1.260 scans y `aisle_1` el pasillo con más tráfico
+  (4.362 scans), coherente con el sesgo que trae el generador de datos.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `calcular_momentos`,
+  `numero_efectivo`, `top_bins` y `trafico_por_pasillo`.
+- **Pruebas:** `python -m unittest tests.test_frequency_moments -v`
+
+*(pendiente — comandos de las demás tareas de `unit2/`)*
+
+**Unit 3**
+
+| Tarea | Archivo | Comando |
+| --- | --- | --- |
+| Task 1 — DTMC Construction & State Classification | `unit3/DTMCConstruction.py` | `python unit3/DTMCConstruction.py` |
+| Task 2 — Stationary Distribution | `unit3/StationaryDistribution.py` | `python unit3/StationaryDistribution.py` |
+| Task 3 — PageRank | `unit3/PageRank.py` | `python unit3/PageRank.py` |
+| Task 4 — Random Walk | `unit3/RandomWalk.py` | `python unit3/RandomWalk.py` |
+| Task 5 — Randomized 2-SAT | `unit3/Randomized2SAT.py` | `python unit3/Randomized2SAT.py` |
+
+
+La Task 1 agrega el stream de scans por `robot_id` (en orden de `stream_seq`) en un grafo de
+movimientos entre bins, y arma con él una cadena de Markov de tiempo discreto: los estados son
+los bins y la matriz de transición M sale de normalizar `move_count` por fila. El grafo de
+aristas se guarda en `data/edges.json`, para que las demás tareas de Unit 3 lo reutilicen.
+
+- **Clasificación formal:** vía componentes fuertemente conexas (algoritmo de Kosaraju, sin
+  dependencias externas). Con este dataset el grafo es una sola componente, así que los 100
+  bins son recurrentes en el sentido estricto de cadenas de Markov; no hay transitorios.
+- **Clasificación práctica:** ordena los bins por tráfico entrante (llegadas de robots) y
+  marca los 10 con más llegadas como "hub" y los 10 con menos como "poco visitados" — la
+  etiqueta de negocio que pide la tarea, distinta de la clasificación formal.
+- **Resultado con el dataset actual:** `bin_1` es el hub principal con 1.256 llegadas; los
+  bins poco visitados rondan las 26 a 31 llegadas.
+- **Funciones reutilizables** (por ejemplo, para las demás tareas y el dashboard):
+  `cargar_grafo`, `construir_matriz_transicion`, `clasificar_formal` y `clasificar_hubs`.
+  
+La Task 2 calcula la **distribución estacionaria** π de la cadena de Markov (estados =
+bins, M de la Task 1): π_i es la fracción del tiempo que, a largo plazo, un robot pasa (o
+llega) al bin i, sin importar en qué bin empezó.
+
+- **Método:** iteración de potencias, π_{t+1} = π_t · M desde la distribución uniforme,
+  hasta que ||π(t+1) − π(t)||₁ < 1e-10. Como la cadena es irreducible (Task 1: una sola
+  componente fuertemente conexa), converge a una única π > 0 sin importar el punto de
+  partida.
+- **Verificación:** se comprueba que π · M ≈ π (residuo < 1e-8) y que π suma 1.
+- **Interpretación:** se compara el ranking de bins por π contra dos referencias crudas
+  (sin ningún modelo de cadena detrás): el conteo de scans por bin y el tráfico entrante
+  del grafo de movimientos (de la Task 1).
+- **Resultado con el dataset actual** (100 bins): converge en 11 iteraciones, residuo
+  3,57e-13. `bin_1` concentra el 12,58 % del tiempo de largo plazo, seguido de `bin_2`
+  (7,20 %) y `bin_3` (4,75 %). El ranking por π coincide 10/10 en el top-10 con el conteo
+  crudo de scans y con el tráfico entrante (Spearman 0,999 en ambos casos): el sesgo de
+  tráfico que trae el generador de datos domina tanto el conteo directo como la dinámica
+  de largo plazo de la cadena, así que aquí pensar en términos de cadena de Markov no
+  cambia mucho el ranking (sí lo haría si el grafo tuviera ciclos o cuellos de botella
+  menos triviales).
+- **Funciones reutilizables** (por ejemplo, para el dashboard, Panel D): `power_iteration`,
+  `distribucion_estacionaria`, `verificar_estacionaria` y `comparar_rankings`.
+- **Pruebas:** `python -m unittest tests.test_stationary_distribution -v`
+
+La Task 3 calcula **PageRank con teletransportación** sobre el mismo grafo de la Task 1:
+P = d·M + (1−d)·U, con U la teletransportación uniforme (1/n a cualquier bin) y
+d = 0,85 (valor estándar). Es la misma idea de iteración de potencias que usa la Task 2,
+pero sobre P en vez de M tal cual (y se reimplementa aquí mismo, para que esta tarea no
+dependa de que la Task 2 de un compañero ya esté en el repo).
+
+- **Por qué teletransportar:** hace que P sea ergódica aunque M no lo fuera (bins sin
+  salida, componentes separadas), y pondera más a los bins a los que llega tráfico desde
+  MUCHOS bins distintos, no solo a los que reciben MUCHO tráfico de pocos.
+- **Convergencia:** se guarda la trayectoria completa de π(t) (no solo la distancia entre
+  iteraciones sucesivas) para medir ||π(t) − π_final||₁ en cada paso. La teoría solo
+  garantiza que la convergencia no sea más lenta que una tasa d por iteración (cota
+  superior); en este dataset converge mucho más rápido que esa cota.
+- **Interpretación:** se compara el ranking de bins por PageRank contra el conteo crudo de
+  scans por bin y contra la distribución estacionaria de M sin teletransportar (d=1).
+- **Resultado con el dataset actual** (100 bins, d=0,85): converge en 12 iteraciones
+  (||π(t+1)−π(t)||₁ < 1e-12); a la iteración 3 el error contra el resultado final ya bajó
+  de 0,64 a 0,0004. `bin_1` lidera con 10,83 % de PageRank (bajó de 12,58 % sin
+  teletransportar: el 15 % de masa que ahora se reparte parejo entre los 100 bins le resta
+  peso a los más concentrados). El ranking top-10 coincide 10/10 tanto con el conteo crudo
+  como con la distribución sin teletransportar (Spearman ≥ 0,998 en ambos casos); la
+  diferencia puntual más grande es 1,75 puntos porcentuales en algún bin.
+- **Funciones reutilizables** (por ejemplo, para el dashboard, Panel D): `pagerank`,
+  `construir_matriz_google`, `analizar_convergencia` y `comparar_rankings`.
+- **Pruebas:** `python -m unittest tests.test_pagerank -v`
+
+La Task 4 simula una **caminata aleatoria perezosa** sobre la cadena de la Task 1 y comprueba que la
+fracción de pasos que el robot pasa en cada bin se acerca a la probabilidad estacionaria teórica πᵢ. En
+cada paso el robot se queda donde está con probabilidad 1/2 (self-loop) y se mueve según `M` con
+probabilidad 1/2; la matriz es `L = (I + M)/2`.
+
+- **Por qué perezosa:** `π·L = π` (la misma π), y `L` siempre es aperiódica. En un grafo bipartito (periodo
+  2) la caminata simple alterna entre los dos lados y la distribución en el paso `t` nunca converge; con
+  pereza sí. En un ciclo de 4 bins, la variación total contra π se queda en 0,5 para siempre con la
+  caminata simple y baja a 0,25 / 0,125 / 0,016 / 0,0005 en los pasos 1 / 2 / 5 / 10 con la perezosa. En el
+  grafo del proyecto la caminata simple ya es aperiódica (periodo 1, hay 42 self-loops), así que aquí la
+  pereza solo agrega costo.
+- **Verificación con 50.000 pasos** (semilla 42, desde `bin_100`, el bin menos probable): error L1 0,0541,
+  error máximo por bin 0,0031 (`bin_4`), error relativo promedio de 4,7 % en los 10 bins de mayor π, y esos
+  10 bins coinciden con los 10 más visitados de la simulación (p. ej. `bin_1`: π = 12,58 %, frecuencia
+  12,57 %; `bin_2`: 7,20 % contra 7,04 %).
+- **Error contra pasos** (promedio de 20 semillas): error L1 0,385 / 0,177 / 0,123 / 0,055 / 0,028 con
+  1.000 / 5.000 / 10.000 / 50.000 / 200.000 pasos. El producto error·√T se mantiene entre 12,2 y 12,5, es
+  decir, el error baja como 1/√T.
+- **Costo de la pereza:** distancia de variación total entre π y la distribución exacta del paso `t`
+  partiendo de `bin_100`: 6,2·10⁻⁵ (simple) contra 0,118 (perezosa) en `t` = 5, 4,9·10⁻¹⁰ contra 7,1·10⁻³ en
+  `t` = 10 y 6·10⁻¹³ contra 1,7·10⁻⁵ en `t` = 20. La perezosa tarda aproximadamente el doble.
+- **Funciones reutilizables:** `hacer_perezosa`, `distribucion_estacionaria`, `simular_caminata`,
+  `comparar_con_pi`, `error_vs_pasos` y `variacion_total_por_paso`.
+- **Pruebas:** `python -m unittest tests.test_random_walk -v`
+
+
+La Task 5 resuelve con el **algoritmo de Papadimitriou** un 2-SAT de restricciones de reabastecimiento
+sobre los 8 bins de mayor π y lo compara con un solver exacto (grafo de implicaciones y componentes
+fuertemente conexas). Cada bin candidato `b` aporta dos variables: `R_b` (se desvía un robot hacia `b`) y
+`P_b` (se prioriza el reabastecimiento en `b`), es decir, 16 variables.
+
+- **Cinco reglas:** (1) urgencia: si π de `b` es alta (≥ 2/N) y su fracción de bajo stock al llegar es alta
+  (≥ la tasa global, 0,1242), entonces `R_b ∨ P_b`; (2) un solo recurso por bin: `¬R_b ∨ ¬P_b`; (3) un solo
+  desvío por pasillo: `¬R_a ∨ ¬R_b`; (4) vecinos fuertes (arista con ≥ 50 movimientos) no se priorizan a la
+  vez: `¬P_a ∨ ¬P_b`; (5) la prioridad bloquea el desvío al vecino fuerte: `¬P_a ∨ ¬R_b`. La condición de la
+  regla 1 sale de los datos, así que no es una variable. Las reglas 2 a 5 son supuestos de diseño del
+  modelo, no hechos medidos en el dataset.
+- **Instancia con el dataset actual:** bins urgentes `bin_2`, `bin_6` y `bin_9`; 16 variables y 45 cláusulas
+  (3, 8, 28, 2 y 4 por regla). Los 8 candidatos están en el mismo pasillo, por eso la regla 3 pesa tanto.
+- **Algoritmo:** asignación inicial aleatoria y, mientras haya una cláusula insatisfecha, se elige una y se
+  invierte una de sus dos variables al azar. Si la fórmula es satisfacible, el número esperado de
+  inversiones es ≤ n²; con rondas de 2n² inversiones se encuentra solución con probabilidad ≥ 1/2 por
+  ronda, así que con 20 rondas la probabilidad de fallar es ≤ 2⁻²⁰.
+- **Resultado:** el solver exacto dice que la fórmula es satisfacible (prioridad en `bin_2`, `bin_6` y
+  `bin_9`, sin desvíos). Papadimitriou (semilla 42) encuentra una solución en 14 inversiones y 1 ronda
+  (desvío a `bin_9`, prioridad en `bin_2`, `bin_4`, `bin_5` y `bin_6`), que satisface las 45 cláusulas. En
+  2.000 rondas independientes hicieron falta 8,6 inversiones en promedio (mediana 8, máximo 33), contra la
+  cota teórica n² = 256, y el 100 % terminó dentro de 2n² = 512 (garantía: al menos 50 %).
+- **Crecimiento con n** (fórmulas aleatorias satisfacibles, m = 3n cláusulas, 200 rondas por n): 14,8 / 34,1 /
+  73,0 / 171,4 inversiones en promedio con n = 8 / 16 / 32 / 64, es decir, entre 23 % y 4 % de n². La cota
+  n² es de peor caso y aquí queda muy holgada.
+- **Variante insatisfacible:** si se fuerza el desvío a `bin_2` y `bin_6` (mismo pasillo), el solver exacto
+  responde "insatisfacible" y Papadimitriou se rinde tras 20 rondas (10.240 inversiones): puede encontrar una
+  solución cuando existe, pero no puede demostrar que no hay.
+- **Pruebas:** `python -m unittest tests.test_randomized_2sat -v`
+
+
+*(pendiente — comandos de las demás tareas de `unit3/`)*
+
+**Unit 4**
+
+| Tarea | Archivo | Comando |
+| --- | --- | --- |
+| Task 1 — MapReduce Pipeline | `unit4/MapReducePipeline.py` | `python unit4/MapReducePipeline.py` |
+| Task 2 — MapReduce Algorithm | `unit4/MapReduceAlgorithm.py` | `python unit4/MapReduceAlgorithm.py` |
+| Task 3 — Cost Analysis | `unit4/CostAnalysis.py` | `python unit4/CostAnalysis.py` |
+| Task 4 — Reducer Size & Replication Rate | `unit4/ReducerSizeReplication.py` | `python unit4/ReducerSizeReplication.py` |
+| Task 5 — Parallel Efficiency | `unit4/ParallelEfficiency.py` | `python unit4/ParallelEfficiency.py` |
+
+La Task 1 construye el resumen por bin (nodo) con dos jobs de MapReduce, y corre el Map en
+paralelo sobre fragmentos del dataset.
+
+- **Job 1 (scans → aristas):** Map emite `(robot_id, (stream_seq, bin_location, quantity,
+  is_low_stock))` por cada scan. Reduce junta los scans de un robot, los ordena por `stream_seq`
+  y emite un par `(from_bin, to_bin)` por cada par de bins consecutivos, con la cantidad y el
+  low stock del scan de llegada; esos pares se suman en un registro por arista (`move_count`,
+  `avg_quantity`, `low_stock_frac`).
+- **Job 2 (aristas → nodos):** Map emite cada arista dos veces, una al bin de origen y otra al
+  de destino. Reduce calcula por bin `out_move_count`, `in_move_count`,
+  `net_flow = in_move_count − out_move_count`, `avg_quantity` y `low_stock_frac` (promedio sobre
+  los movimientos que llegan al bin, igual que en las aristas).
+- **Paralelismo:** el dataset se parte en **8 fragmentos** (archivos contiguos) y **4 workers**
+  (`multiprocessing.Pool`) corren el Map sobre ellos. Los 20 robots aparecen en los 8
+  fragmentos, así que el orden por `stream_seq` solo se recupera después del shuffle
+  (`hash(robot_id) % R`, con un hash determinista) y los reducers también corren en paralelo.
+  Los dos valores son parámetros: `ejecutar_pipeline(scans, n_fragmentos=8, workers=4)`.
+- **Resultado:** 10.000 tuplas del Map → 9.980 movimientos (10.000 scans − 20 robots, porque el
+  primer scan de cada robot no es la llegada de ningún movimiento) → **3.954 aristas** (Job 1);
+  7.908 tuplas del Map (2 por arista) → **100 nodos** (Job 2). El resumen por nodo se guarda
+  en `data/nodes.json`.
+- **Validación contra la Unit 3:** las aristas son idénticas a `construir_aristas` y a
+  `data/edges.json`; `in_move_count` coincide con `trafico_entrante`; la suma de `net_flow` es 0;
+  y `avg_quantity` y `low_stock_frac` coinciden con el promedio ponderado de las aristas (hasta
+  el redondeo de estas). El resultado es idéntico con 1, 2 y 4 workers y con 3, 8 y 16
+  fragmentos.
+- **Tiempos:** con 10.000 scans el pipeline en paralelo no es más rápido que el serial (el
+  arranque del Pool pesa más que el cómputo); el speedup y la eficiencia se miden en la Task 5.
+- **Funciones reutilizables:** `ejecutar_pipeline`, `job1`, `job2`, `validar_contra_unit3`,
+  `obtener_nodos`.
+- **Pruebas:** `python -m unittest tests.test_mapreduce_pipeline -v` (30 pruebas).
+
+La Task 2 agrupa los SKUs en **k=3 clusters** (S12 — K-Means) sobre tres características
+calculadas con un job de MapReduce sobre los scans crudos: `avg_quantity`, `low_stock_frac` y
+`scan_count` por SKU. Cada iteración de K-Means se escribe a su vez como un Map (asignar cada
+SKU al centroide más cercano) + un Reduce (promediar los puntos de cada cluster).
+
+- **Job 1 (agregar por SKU):** Map emite `(sku, (quantity, is_low_stock, 1))` por cada scan;
+  Reduce junta por SKU y calcula los tres promedios/conteos.
+- **Por qué estandarizar:** `scan_count` va de 1 a 188 (muy sesgado, como el tráfico de bins
+  de la Unidad 3), `avg_quantity` de 0 a 52 y `low_stock_frac` de 0 a 1 — en escalas muy
+  distintas. Sin estandarizar (z-score), la distancia euclidiana la domina casi por completo
+  `scan_count` y K-Means termina agrupando solo por eso.
+- **Sensible al punto de partida:** con una sola corrida, semillas distintas daban resultados
+  distintos — algunas encontraban el grupo pequeño de SKUs de altísima rotación, otras lo
+  disolvían dentro de un cluster más grande. Por eso se corre K-Means 10 veces con semillas
+  distintas y se usa la de menor inercia (WCSS), la práctica estándar. Con 10 reinicios el
+  resultado quedó idéntico sin importar la semilla de arranque.
+- **Etiquetas de negocio:** no se asignan por un índice fijo (el orden de los clusters que da
+  K-Means es arbitrario), sino por los promedios de cada cluster: el de mayor `low_stock_frac`
+  es "crítico", de los que quedan el de mayor `scan_count` es "rotación rápida", y el último es
+  "stock estable".
+- **Resultado con el dataset actual** (1.900 SKUs, mejor de 10 reinicios, inercia = 2.360,9):
+  **stock estable** (1.630 SKUs, 85,8 %) con `avg_quantity` = 28,76 y `low_stock_frac` = 0,003;
+  **crítico** (258 SKUs, 13,6 %) con `avg_quantity` = 3,33 y `low_stock_frac` = 0,811; y
+  **rotación rápida** (solo 12 SKUs, 0,6 %) con `scan_count` = 78,58 en promedio — muy por
+  encima del promedio general de 5,26 scans por SKU.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `agregar_por_sku`, `kmeans`,
+  `caracterizar_clusters` y `etiquetar_clusters`.
+- **Pruebas:** `python -m unittest tests.test_mapreduce_algorithm -v`
+
+La Task 3 mide el **tamaño del shuffle** (lo que viaja de los mappers a los reducers) del
+pipeline de la Task 2, con y sin combiner, a 1x, 2x y 4x datos; comprueba si crece de forma lineal
+y lo extrapola a 10x, que después se contrasta con una corrida real a 10x.
+
+- **Qué se mide:** (1) el job de agregación por SKU: sin combiner viaja un registro por scan; con
+  combiner, cada map task suma localmente por `sku` y manda uno por SKU distinto de ese map task
+  (el Reduce solo suma, así que el combiner es válido y el resultado es idéntico). (2) Cada
+  iteración de K-Means, que trabaja sobre la tabla de SKUs: sin combiner viaja un registro por
+  punto; con combiner, a lo sumo una suma parcial por cluster y por map task (k registros por map
+  task). El shuffle se mide en registros y en bytes (JSON compacto, como en la Task 1 de la Unit 1).
+- **Datos:** 1x es el dataset de 10.000 scans; 2x, 4x y 10x son los primeros 20.000, 40.000 y
+  100.000 scans del mismo generador (el generador es secuencial: el 1x es exactamente
+  `data/dataset.json` y cada tamaño contiene al anterior). No se repite el dataset, porque un map
+  task vería SKUs repetidos de forma artificial y el combiner saldría favorecido.
+- **Map tasks:** fragmentos de 1.250 scans (10.000 / 8), así que hay 8, 16, 32 y 80 map tasks, como
+  los bloques de un sistema de archivos distribuido. K-Means reparte la tabla de SKUs en 8 map
+  tasks. Como variante, se repite la agregación con 8 map tasks fijos.
+- **Agregación por SKU:**
+
+  | Datos | Scans | Map tasks | Sin combiner | Con combiner | Ahorro |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | 1x | 10.000 | 8 | 10.000 reg. (192,3 KiB) | 6.243 reg. (122,7 KiB) | 37,6 % |
+  | 2x | 20.000 | 16 | 20.000 reg. (384,5 KiB) | 12.449 reg. (244,7 KiB) | 37,8 % |
+  | 4x | 40.000 | 32 | 40.000 reg. (769,0 KiB) | 24.907 reg. (489,5 KiB) | 37,7 % |
+  | 10x (validación) | 100.000 | 80 | 100.000 reg. (1.922,3 KiB) | 62.198 reg. (1.222,3 KiB) | 37,8 % |
+
+- **K-Means, por iteración** (una corrida, semilla 42000; el número de iteraciones hasta converger
+  es 8, 10, 12 y 12):
+
+  | Datos | Puntos (SKUs) | Sin combiner | Con combiner |
+  | --- | ---: | ---: | ---: |
+  | 1x | 1.900 | 1.900 reg. (122,4 KiB) | 24 reg. (1,5 KiB) |
+  | 2x | 1.993 | 1.993 reg. (129,8 KiB) | 24 reg. (1,5 KiB) |
+  | 4x | 2.000 | 2.000 reg. (129,1 KiB) | 24 reg. (1,5 KiB) |
+  | 10x (validación) | 2.000 | 2.000 reg. (131,6 KiB) | 24 reg. (1,5 KiB) |
+
+- **Crecimiento lineal:** el shuffle de la agregación por SKU crece de forma **lineal** con los
+  datos, con y sin combiner. Sin combiner es exactamente un registro por scan (razones 2,00 y 4,00
+  contra 1x), y con combiner las razones son 1,99 y 3,99. La recta ajustada con 1x, 2x y 4x predice
+  100.000 registros a 10x sin combiner (medido: 100.000) y 62.238 con combiner (medido: 62.198, un
+  +0,1 %); en bytes, +0,0 % y +0,1 %. El ahorro del combiner es constante (≈ 37,7 %), porque cada
+  map task tiene siempre el mismo tamaño y ve la misma mezcla de SKUs.
+- **K-Means no crece con los scans, sino con los SKUs distintos:** sin combiner el shuffle por
+  iteración es un registro por SKU, y los SKUs distintos saturan en el catálogo de 2.000 (1.900,
+  1.993, 2.000, 2.000). Por eso es **casi constante** (razones 1,05 y 1,05) y la recta sobreestima
+  a 10x (2.187 predichos contra 2.000 medidos, +9,4 %). Con combiner es **constante**: 24 registros
+  por iteración (8 map tasks × 3 clusters), sin importar los datos: el combiner lo reduce un
+  98,7 % (1.900 → 24 registros, 122,4 → 1,5 KiB). Lo que sí cambia entre tamaños es el número de
+  iteraciones hasta converger, que depende de los datos y no sigue una ley simple.
+- **Pipeline completo (agregación + todas las iteraciones de K-Means), a 10x:** 124.000 registros
+  sin combiner y 62.482 con combiner (−49,6 %). A 1x el combiner ahorra un 74,5 % (25.200 → 6.435),
+  y el ahorro baja a medida que crecen los datos porque la agregación domina. Sin combiner el
+  pipeline crece de forma sublineal (razones 1,58 y 2,54) y la recta sobreestima a 10x (+13,9 %);
+  con combiner es lineal (+0,4 %).
+- **Variante con 8 map tasks fijos:** si el número de map tasks no crece con los datos, cada uno
+  recibe fragmentos más grandes, el combiner agrupa cada vez más scans del mismo SKU y el shuffle
+  crece de forma **sublineal**: 6.243, 9.541, 12.909 y 15.535 registros a 1x, 2x, 4x y 10x (ahorro de
+  37,6 % a 84,5 %). Aquí una recta ajustada con 1x, 2x y 4x predice 26.010 a 10x contra 15.535
+  medidos (+67 %): **la extrapolación lineal solo vale si el número de map tasks crece con los
+  datos**.
+- **Comprobaciones:** los SKUs agregados son idénticos con y sin combiner (y a los de la Task 2),
+  el K-Means instrumentado da exactamente las mismas asignaciones y centroides que el de la Task 2,
+  y los centroides calculados desde las sumas parciales del combiner coinciden (diferencia máxima
+  de 1,8e-15).
+- **Funciones reutilizables:** `ejecutar`, `agregacion_sku`, `kmeans_con_costo`, `ajuste_lineal`,
+  `clasificar_crecimiento` y `extrapolar`.
+- **Pruebas:** `python -m unittest tests.test_cost_analysis -v` (36 pruebas).
+
+La Task 4 simula en Python los dos jobs de MapReduce que construyen el grafo de movimientos
+(el de la Unit 3) y mide dos cosas de cada uno: la **replication rate** (r) y el **tamaño del
+reducer** (q) de la clave más cargada (hot key).
+
+- **Job 1 (aristas):** el Map emite `(robot_id, (stream_seq, bin_location, quantity,
+  is_low_stock))` y el Reduce ordena por `stream_seq` y cuenta los pares de bins
+  consecutivos. Da las mismas 3.954 aristas que `DTMCConstruction.py`.
+- **Job 2 (resumen por bin):** a partir de las aristas calcula `out_move_count`,
+  `in_move_count`, `net_flow`, `avg_quantity` y `low_stock_frac` por bin (100 bins).
+- **Replication rate:** Job 1 tiene r = 1,00, porque cada scan emite una sola tupla. Job 2
+  tiene r = 2,00, porque cada arista se emite dos veces, una por cada bin extremo.
+- **Hot key y q:** en Job 1 es `robot_3` con q = 543 scans. En Job 2 es `bin_1` con
+  q = 200 registros.
+- **Efecto del número de reducers (Job 1, particionado `hash(robot_id) % R`):**
+
+  | R | Carga máx. del reducer | % de los scans | Veces q |
+  | --- | --- | --- | --- |
+  | 1 | 10.000 | 100,0 % | 18,42x |
+  | 2 | 5.025 | 50,2 % | 9,25x |
+  | 4 | 2.990 | 29,9 % | 5,51x |
+  | 8 | 1.542 | 15,4 % | 2,84x |
+
+- **Lectura del resultado:** subir R reparte la carga, pero nunca baja de q = 543, porque
+  todos los registros de un mismo robot deben ir al mismo reducer. Con pocas claves
+  (20 robots) y R chico, además, varias claves comparten reducer: con R = 8 el reducer más
+  cargado no tiene a `robot_3`, sino a `robot_19`, `robot_11` y `robot_2` juntos (1.542
+  registros), mucho más que q.
+- **Tests:** `python -m unittest tests.test_reducer_size_replication -v` (9 pruebas).
+
+
+La Task 5 (S13 — Scaling on Balanced Keys) corre el pipeline de la Task 1 (agrupar los
+scans de cada robot por `stream_seq` y contar movimientos consecutivos entre bins) con
+P = 1, 2, 4, 8 workers sobre 2 tamaños de dataset, y mide el tiempo real (wall-clock) para
+calcular el speedup `S_P = T_1/T_P` y la eficiencia `E_P = S_P/P`.
+
+- **Partición por localidad de datos, no por pickling:** la primera versión reparta los
+  scans pasándolos como argumento a los workers (o haciendo que cada uno releyera el
+  dataset completo); las dos dieron tiempos **peores** con más workers, en cualquier
+  tamaño de datos — mover o releer los datos cuesta más que contarlos. La solución: el
+  dataset se parte una sola vez en 8 archivos (shards) por `hash(robot_id) % 8` — las
+  mismas claves balanceadas que pide la tarea —, y cada worker lee **solo** sus propios
+  shards del disco.
+- **Pool "tibio", no uno nuevo por corrida:** levantar un `multiprocessing.Pool` en Windows
+  arranca procesos de Python desde cero y cuesta cientos de milisegundos por worker — más
+  que todo este pipeline tan liviano. Por eso se mide aparte el costo de arranque (una sola
+  vez, informativo) y el tiempo de "estado estable" (el mínimo de varias corridas
+  reutilizando el mismo Pool ya arrancado); el speedup y la eficiencia se calculan sobre el
+  estado estable, la comparación justa entre P=1 y P>1.
+- **Resultado con el dataset actual** (máquina de 4 núcleos lógicos; P>4 sobresuscribe la
+  CPU):
+
+  | Tamaño | P | tiempo estable (s) | speedup | eficiencia |
+  | --- | ---: | ---: | ---: | ---: |
+  | 1x (10.000 scans) | 1 | 0,065 | 1,00 | 100 % |
+  | 1x | 2 | 0,054 | 1,19 | 59,5 % |
+  | 1x | 4 | 0,045 | 1,45 | 36,3 % |
+  | 1x | 8 | 0,051 | 1,27 | 15,8 % |
+  | 20x (200.000 scans) | 1 | 1,400 | 1,00 | 100 % |
+  | 20x | 2 | 0,813 | 1,72 | 86,2 % |
+  | 20x | 4 | 0,660 | 2,12 | 53,0 % |
+  | 20x | 8 | 0,879 | 1,59 | 19,9 % |
+
+- **Dónde cae la eficiencia:** el speedup sube hasta P=4 y **cae** en P=8 en los dos
+  tamaños — esta máquina solo tiene 4 núcleos físicos, así que P=8 reparte el trabajo
+  entre más procesos de los que la CPU puede correr a la vez (sobresuscripción). También
+  se ve que la eficiencia es mejor con más datos (20x) que con menos (1x) en cada P: el
+  costo fijo de repartir y combinar el trabajo pesa menos cuando hay más cómputo real que
+  amortizarlo (ninguna corrida llega al 100 % de eficiencia en P>1 porque ese costo fijo
+  nunca desaparece del todo).
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `escribir_shards`,
+  `mapper_shards`, `medir_con_pool` y `experimento`.
+- **Pruebas:** `python -m unittest tests.test_parallel_efficiency -v`
+
+
+*(pendiente — comandos de las demás tareas de `unit4/`)*
+
+
+**Unit 5**
+
+| Tarea | Archivo | Comando |
+| --- | --- | --- |
+| Task 1 — Distance Measures | `unit5/DistanceMeasures.py` | `python unit5/DistanceMeasures.py` |
+| Task 2 — Cosine LSH with Random Hyperplanes | `unit5/CosineLSH.py` | `python unit5/CosineLSH.py` |
+| Task 3 — Shingling: Anchor-based Shingles | `unit5/AnchorShingles.py` | `python unit5/AnchorShingles.py` |
+| Task 4 — MinHash + Banding: Threshold Design | `unit5/MinHashBanding.py` | `python unit5/MinHashBanding.py` |
+
+La Task 1 compara **Jaccard, coseno, L1 y L2** (y la similitud LCS) sobre 1.000 chunks de robot con
+clusters plantados, representados como conjunto y como vector, y revisa si las distancias se
+concentran.
+
+- **Chunks:** 1.000 chunks sintéticos en 10 clusters plantados de 100 chunks (cada cluster sigue una
+  plantilla de barrido por pasillos, con ruido y omisiones: `generar_chunks` de la Task 3, semilla
+  42), con 28,5 bins en promedio. `avg_quantity` y `low_stock_frac` se miden sobre scans reales: por
+  cada bin que visita el chunk se toma al azar un scan real de ese bin. En este dataset el stock
+  depende del SKU y no del bin, así que esas dos métricas no traen información del cluster: son ruido.
+- **Conjunto:** shingles de k = 3 bins consecutivos (26,5 distintos por chunk; vocabulario de 6.977).
+  Se compara con **Jaccard**.
+- **Vector:** 102 dimensiones: la participación de cada uno de los 100 bins (cuenta del bin / largo de
+  la secuencia) más `avg_quantity` y `low_stock_frac` en z-score; es la misma representación de la
+  Task 2. Se compara con **coseno**, **L1** y **L2**.
+- **LCS:** longitud de la subsecuencia común más larga de las dos `bin_sequence`, dividida entre la
+  longitud de la más larga. A diferencia de Jaccard, respeta el orden de los bins.
+- **Pares:** 5.000 pares distintos al azar (507 del mismo cluster y 4.493 de clusters distintos). El AUC
+  es la probabilidad de que un par del mismo cluster salga más parecido que uno de clusters distintos.
+
+  | Medida | Media | Mismo cluster | Otro cluster | AUC |
+  | --- | ---: | ---: | ---: | ---: |
+  | Jaccard (shingles k = 3) | 0,033 | 0,274 | 0,006 | 1,000 |
+  | LCS (bin_sequence) | 0,240 | 0,756 | 0,182 | 1,000 |
+  | Coseno (102 dim) | 0,017 | 0,067 | 0,012 | 0,526 |
+  | L1 (102 dim) | 3,601 | 2,710 | 3,701 | 0,710 |
+  | L2 (102 dim) | 1,777 | 1,734 | 1,782 | 0,510 |
+  | Coseno (solo bins) | 0,350 | 0,787 | 0,300 | 1,000 |
+  | L1 (solo bins) | 1,319 | 0,462 | 1,416 | 1,000 |
+  | L2 (solo bins) | 0,217 | 0,125 | 0,228 | 1,000 |
+
+  Las distribuciones están en `data/distance_measures.png` (histogramas del mismo cluster contra
+  clusters distintos y la dispersión Jaccard contra LCS).
+- **Lectura de las distribuciones:** Jaccard y LCS separan los clusters sin errores. El coseno y L2
+  sobre los 102 dimensiones casi no los distinguen (AUC 0,53 y 0,51) y L1 solo en parte (0,71): las 2
+  métricas z-score, que son ruido, tienen norma media 1,23 contra 0,19 de la parte de bins, así que
+  dominan el vector (el coseno se parece al de un vector de 2 dimensiones, con picos en −1 y 1). Sin
+  ellas (filas "solo bins") las tres medidas separan perfectamente.
+- **Correlación en 500 pares** (53 del mismo cluster), Pearson / Spearman:
+
+  | Par de medidas | 500 pares al azar | 507 pares del mismo cluster |
+  | --- | ---: | ---: |
+  | Jaccard / LCS | 0,903 / 0,548 | 0,840 / 0,859 |
+  | Jaccard / coseno (102 dim) | 0,098 / 0,089 | 0,038 / 0,032 |
+  | LCS / coseno (102 dim) | 0,095 / 0,088 | 0,029 / 0,024 |
+  | Jaccard / coseno (solo bins) | 0,842 / 0,577 | 0,774 / 0,791 |
+  | LCS / coseno (solo bins) | 0,927 / 0,703 | 0,916 / 0,916 |
+
+  Jaccard y LCS están muy correlacionadas. En los pares al azar el Pearson (0,90) sale más alto que
+  el Spearman (0,55) porque hay dos nubes de puntos (pares de otro cluster, casi todos con Jaccard
+  cerca de 0, y pares del mismo cluster); dentro de un mismo cluster las dos coinciden en qué pares son
+  más parecidos (Spearman 0,86). El coseno de 102 dimensiones casi no se correlaciona con ninguna
+  (0,10), por lo de las métricas; el de solo bins sí (0,84 y 0,93).
+- **Concentración de las distancias:** coeficiente de variación (CV = desviación / media) y contraste
+  relativo ((máx − mín) / mín) sobre los 5.000 pares, y razón entre el vecino más cercano y el más
+  lejano (promedio de 50 chunks consultados); "NN mismo cl." es la fracción de consultas cuyo vecino
+  más cercano es del mismo cluster.
+
+  | Distancia | CV | Contraste | Más cercano / más lejano | NN mismo cl. |
+  | --- | ---: | ---: | ---: | ---: |
+  | L1 (102 dim) | 0,405 | 25,1 | 0,069 | 1,00 |
+  | L2 (102 dim) | 0,571 | 57,7 | 0,031 | 0,78 |
+  | 1 − coseno (102 dim) | 0,714 | 745,2 | 0,010 | 0,92 |
+  | L1 (solo bins) | 0,250 | 13,5 | 0,147 | 1,00 |
+  | L2 (solo bins) | 0,163 | 3,9 | 0,330 | 1,00 |
+  | 1 − coseno (solo bins) | 0,262 | 18,1 | 0,126 | 1,00 |
+
+  Con 102 dimensiones **no hay concentración fuerte**: el vecino más cercano está al 1–7 % de
+  distancia del más lejano. La más concentrada es L2 sobre solo bins (CV 0,16; el más cercano está al
+  33 % del más lejano), porque los pares de clusters distintos comparten pocos bins (Jaccard medio de
+  los conjuntos de bins: 0,18) y quedan a una distancia casi igual: 0,228 con desviación de 0,016
+  (CV 0,07); aun así separa perfectamente, porque los del mismo cluster están mucho más cerca (0,125). Es decir, que el coseno y
+  L2 de 102 dimensiones fallen no es concentración de distancias: están muy dispersas, pero esa
+  dispersión es ruido de las métricas. (El contraste de 1 − coseno es enorme porque el vecino más
+  cercano tiene coseno ≈ 1, o sea distancia ≈ 0.)
+- **Datos guardados:** `data/chunks.json` (1.000 chunks con los campos del template de datos de la
+  Unit 5: `robot_id`, `bin_sequence`, `seq_length`, `avg_quantity`, `low_stock_frac`, `shingle_count`
+  y `occupancy_vector`, más `cluster`; `minhash_signature` y `neighbors` los calculan otras tareas) y
+  `data/distance_measures.png`. Ambos se regeneran al correr el script (≈ 6 s).
+- **Funciones reutilizables:** `construir_chunks_plantados`, `construir_representaciones`,
+  `medir_pares`, `similitud_lcs`, `correlaciones` y `ejecutar`.
+- **Pruebas:** `python -m unittest tests.test_distance_measures -v` (43 pruebas).
+
+La Task 2 arma **firmas de hiperplano aleatorio** para buscar tramos de robot (robot
+chunks) parecidos sin comparar cada par contra todos los demas.
+
+- **Los vectores:** un tramo (chunk) son `LONGITUD_CHUNK` = 8 scans consecutivos de un
+  mismo robot (1.239 chunks con el dataset actual — la tarea pide >= 1.000). El vector
+  de un chunk es su participación por bin (cuenta del bin / 8) más `avg_quantity` y
+  `low_stock_frac` del tramo, estandarizados (z-score) sobre todos los chunks — 102
+  dimensiones en total. Esta parte replica lo que pide la Task 1 de esta unidad, para
+  que esta tarea no dependa de que ya esté en el repo.
+- **La firma:** con n hiperplanos aleatorios (cada coordenada ~ N(0,1)), el bit i de la
+  firma es 1 si el vector queda del lado positivo del hiperplano i. Para dos vectores
+  cualquiera, la probabilidad de que un hiperplano los separe es exactamente
+  `θ/180` (θ = ángulo real entre ellos, en grados); por eso la fracción de bits donde
+  coinciden sus firmas estima `1 - θ/180`.
+- **Verificación con el dataset actual** (1.000 pares al azar, n = 16/32/64/128): el
+  error promedio entre la fracción empírica y la teórica baja de forma monótona con n
+  — 0,1045 / 0,0680 / 0,0415 / 0,0299 — como predice la teoría (la varianza de la
+  fracción de bits coincidentes baja como `1/n`).
+- **Indice por bandas:** con n=128 (el más largo de los 4), la firma se parte en 16
+  bandas de 8 bits; dos chunks son candidatos si coinciden EXACTO en al menos una
+  banda. Para 50 consultas al azar se compara el top-5 por LSH (coseno exacto solo
+  sobre los candidatos) contra el top-5 por fuerza bruta (coseno exacto sobre los
+  1.238 chunks restantes).
+- **Resultado:** recall@5 = 94,4 % en promedio, examinando 381,5 candidatos de 1.238
+  en promedio — un 69,2 % menos comparaciones que la fuerza bruta, con una pérdida de
+  precisión chica.
+- **Funciones reutilizables** (por ejemplo, para el dashboard): `cargar_tramos_y_vectores`,
+  `firma`, `construir_indice_bandas` y `experimento_recall`.
+- **Pruebas:** `python -m unittest tests.test_cosine_lsh -v`
+
+La Task 3 compara dos formas de armar el conjunto de shingles de la `bin_sequence` de un chunk,
+con el mismo k: **consecutivos** (un shingle empieza en cada posición) y **anclados** (un shingle
+empieza solo donde hay un ancla y toma ese token más los k-1 siguientes). Las anclas son los 5
+bins con mayor PageRank de la Unit 3 (`unit3/PageRank.py`, d = 0,85): `bin_1` a `bin_5`.
+
+- **Chunks:** 1.000 chunks sintéticos en 10 clusters plantados (cada uno sigue una plantilla de
+  barrido por pasillos, con ruido y semilla fija). Con ellos se mide la separación entre clusters.
+  También se mide el tamaño del conjunto sobre los 1.239 chunks reales de `unit5/CosineLSH.py`.
+- **Métricas:** shingles distintos por chunk, chunks que quedan vacíos, Jaccard medio dentro y entre
+  clusters, AUC y precisión@5 de los vecinos por Jaccard.
+- **Resultado con k = 3:** el conjunto anclado es mucho más chico (2,1 contra 26,5 shingles por
+  chunk plantado; 1,9 contra 6,0 en chunks reales), pero pierde separación: AUC 0,668 contra 0,999
+  y precisión@5 de 0,448 contra 1,000.
+- **Lectura:** un chunk sin ningún ancla queda sin shingles (190 de 1.000 plantados, 109 de 1.239
+  reales con k = 3) y no se puede comparar. Las anclas ahorran memoria, pero solo sirven si los
+  patrones que se quieren distinguir pasan por los bins más visitados.
+- **Tests:** `python -m unittest tests.test_anchor_shingles -v` (8 pruebas).
+
+La Task 4 encuentra pares de chunks parecidos sin comparar los 499.500 pares. El **Map**
+calcula la firma MinHash de 100 valores de cada chunk (shingles k = 3) y emite sus `b` bandas;
+el **Reduce** agrupa por banda y los chunks que caen en el mismo cubo son pares candidatos. Corre
+con un Pool de 2 procesos, como el runner de `unit4/ParallelEfficiency.py`.
+
+- **Elección de (b, r), con b·r = 100:** falsos negativos en s = 0,8 ≤ 1 %, probabilidad de ser
+  candidato en s = 0,6 ≥ 95 %, y entre las que cumplen, la de r más grande (menos candidatos
+  falsos). Resultado: **b = 25, r = 4** (umbral aprox. 0,447; falsos negativos en s = 0,8:
+  0,00019 %; P(s = 0,6) = 96,9 %).
+- **Datos:** 1.000 chunks sintéticos en 10 clusters plantados, cada chunk con su propio nivel de
+  ruido; 22.994 pares con s ≥ 0,6 y 10.689 con s ≥ 0,8 (verdad de referencia por fuerza bruta).
+- **Resultado:** 37.771 pares candidatos de 499.500 (7,56 % de las comparaciones), recall 0,993
+  y precisión 0,604 sobre los pares con s ≥ 0,6; 0 % de falsos negativos en s ≥ 0,8.
+- **Teoría contra empírico:** la fracción de pares que resultan candidatos por rango de
+  similitud coincide con la curva 1 − (1 − s^r)^b (por ejemplo, 0,872 contra 0,879 teórico en
+  s de 0,5 a 0,6).
+- **Lectura de la precisión:** la mayoría de los candidatos "falsos" tienen s entre 0,2 y 0,6;
+  se descartan al calcular el Jaccard exacto solo sobre los candidatos.
+- **Alternativa:** (b = 20, r = 5) también cumple falsos negativos ≤ 1 %, con menos candidatos
+  (6,4 %) y recall 0,968, pero en s = 0,6 exacto solo garantiza 80 %.
+- **Tests:** `python -m unittest tests.test_minhash_banding -v` (12 pruebas).
+
+*(pendiente — comandos de las demás tareas de `unit5/`)*
+
+
+## Ejecutar el dashboard
+
+Dashboard de la Unit 1 (Panel A, Panel B y Panel C):
+
+```bash
+streamlit run dashboard_unit1.py
+```
+
+Se abre en el navegador. El Panel A muestra la cantidad de scans por bucket con chaining y con
+Power of Two Choices, y un deslizador permite cambiar el número de buckets. El Panel B compara
+el reservoir sampling (Task 2) contra el conteo exacto: estimación con su IC 95 % para el `k` y
+la semilla elegidos, tiempo de ejecución de cada método y error según `k`. El Panel C es el
+tablero de alertas de bajo stock en vivo: un deslizador mueve la posición en el stream y la tabla
+muestra los SKUs cuyo último scan está en bajo stock (SKU, bin y cantidad), ordenados por
+urgencia (menor cantidad primero y, a igual cantidad, el scan más reciente). Además permite
+consultar el historial de un SKU con el índice de hash universal de la Task 3.
+
+Dashboard de la Unit 2 (Panel A, Panel B y Panel C completos):
+
+```bash
+streamlit run dashboard_unit2.py
+```
+
+El Panel A muestra la tasa de falsos positivos del Bloom filter a medida que avanza el turno,
+con controles para ajustar el tamaño del filtro. El Panel B grafica el conteo real de SKUs
+distintos y la estimación de Flajolet-Martin (Task 4), con controles para el número de funciones
+de hash, el error relativo en cada punto y la memoria que usa. El Panel C es un tablero de
+alertas de bajo stock en vivo, ordenado por urgencia, con un slider para moverse por el stream,
+más las métricas F0/F1/F2 (Task 5) y el top 10 de bins con más tráfico, calculados sobre los mismos scans que muestra el slider.
+
+Dashboard de la Unit 3 (Panel A y Panel D):
+
+```bash
+streamlit run dashboard_unit3.py
+```
+
+El Panel A muestra el grafo de movimientos (bins, movimientos distintos, self-loops,
+componentes fuertemente conexas), el ranking de bins "hub" contra "poco visitados", y un
+explorador que muestra los destinos más probables desde cualquier bin elegido.
+El Panel D compara el PageRank de la Task 3 (con un deslizador para el factor de amortiguación `d`)
+contra el ranking por conteo crudo de scans por bin: métricas de convergencia y de coincidencia
+(top-n y Spearman), barras del top por PageRank con la tasa de bajo stock de cada bin encima, un
+gráfico de todos los bins (peso por conteo contra peso por PageRank, coloreado por bajo stock) y una
+tabla completa con filtro de bins sobre la tasa global de bajo stock.
+
+Selector que reúne los tres dashboards en un solo lugar, con un menú en la barra lateral:
+
+```bash
+streamlit run main.py
+```
+
+## Informe
+
+*(pendiente — informe de máximo 3 páginas con resumen del escenario, qué se midió,
+comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
+
+## Estado del proyecto
+
+- [x] Generador de datos
+- [X] Unit 1 — tareas
+  - [x] Task 1 — Big Data Context
+  - [x] Task 2 — Randomized Algorithm
+  - [x] Task 3 — Universal Hashing
+  - [x] Task 4 — Hash Table Operations
+  - [x] Task 5 — Probability Analysis
+  - [X] Task 6 - Dashboard
+- [X] Unit 2 — tareas
+  - [x] Task 1 — Stream Model & Query Design
+  - [x] Task 2 — Bloom Filter
+  - [x] Task 3 — Stream Sampling
+  - [x] Task 4 — Distinct Count
+  - [x] Task 5 — Frequency Moments
+  - [x] Task 6 - Dashboard
+- [X] Unit 3 — tareas
+  - [x] Task 1 — DTMC Construction & State Classification
+  - [x] Task 2 — Stationary Distribution
+  - [x] Task 3 — PageRank
+  - [x] Task 4 — Random Walk
+  - [x] Task 5 — Randomized 2-SAT
+  - [X] Task 6 - Dashboard
+- [ ] Unit 4 — tareas
+  - [x] Task 1 — MapReduce Pipeline
+  - [x] Task 2 — MapReduce Algorithm
+  - [x] Task 3 — Cost Analysis
+  - [x] Task 4 — Reducer Size & Replication Rate
+  - [x] Task 5 — Parallel Efficiency
+  - [ ] Demás tareas
+- [ ] Unit 5 — tareas
+  - [x] Task 1 — Distance Measures
+  - [x] Task 2 — Cosine LSH with Random Hyperplanes
+  - [x] Task 3 — Shingling: Anchor-based Shingles
+  - [x] Task 4 — MinHash + Banding: Threshold Design
+- [ ] Dashboards
+  - [x] Unit 1 — Panel A
+  - [x] Unit 1 — Panel B
+  - [x] Unit 1 — Panel C
+  - [x] Unit 2 — Panel A y Panel B
+  - [x] Unit 2 — Panel C
+  - [x] Unit 3 — Panel A
+  - [x] Unit 3 — Panel D
+  - [x] Selector `main.py`
+- [ ] Informe
