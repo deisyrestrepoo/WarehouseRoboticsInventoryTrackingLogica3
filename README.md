@@ -96,7 +96,7 @@ Decisiones del generador:
 
 ```text
 WarehouseRoboticsInventoryTrackingLogica3/
-├── data/                  # generador de datos, dataset y grafo de movimientos (edges.json)
+├── data/                  # generador de datos, dataset, grafo (edges.json), resumen por nodo (nodes.json) y chunks de la Unit 5 (chunks.json)
 ├── unit1/                 # tareas batch (Big Data, hashing, tabla hash, Chebyshev)
 ├── unit2/                 # tareas de streaming (Bloom Filter, Flajolet-Martin, F_k)
 ├── unit3/                 # tareas de cadenas de Markov (DTMC, estacionaria, PageRank, random walk, 2-SAT)
@@ -458,9 +458,43 @@ fuertemente conexas). Cada bin candidato `b` aporta dos variables: `R_b` (se des
 
 | Tarea | Archivo | Comando |
 | --- | --- | --- |
+| Task 1 — MapReduce Pipeline | `unit4/MapReducePipeline.py` | `python unit4/MapReducePipeline.py` |
 | Task 2 — MapReduce Algorithm | `unit4/MapReduceAlgorithm.py` | `python unit4/MapReduceAlgorithm.py` |
+| Task 3 — Cost Analysis | `unit4/CostAnalysis.py` | `python unit4/CostAnalysis.py` |
 | Task 4 — Reducer Size & Replication Rate | `unit4/ReducerSizeReplication.py` | `python unit4/ReducerSizeReplication.py` |
 | Task 5 — Parallel Efficiency | `unit4/ParallelEfficiency.py` | `python unit4/ParallelEfficiency.py` |
+
+La Task 1 construye el resumen por bin (nodo) con dos jobs de MapReduce, y corre el Map en
+paralelo sobre fragmentos del dataset.
+
+- **Job 1 (scans → aristas):** Map emite `(robot_id, (stream_seq, bin_location, quantity,
+  is_low_stock))` por cada scan. Reduce junta los scans de un robot, los ordena por `stream_seq`
+  y emite un par `(from_bin, to_bin)` por cada par de bins consecutivos, con la cantidad y el
+  low stock del scan de llegada; esos pares se suman en un registro por arista (`move_count`,
+  `avg_quantity`, `low_stock_frac`).
+- **Job 2 (aristas → nodos):** Map emite cada arista dos veces, una al bin de origen y otra al
+  de destino. Reduce calcula por bin `out_move_count`, `in_move_count`,
+  `net_flow = in_move_count − out_move_count`, `avg_quantity` y `low_stock_frac` (promedio sobre
+  los movimientos que llegan al bin, igual que en las aristas).
+- **Paralelismo:** el dataset se parte en **8 fragmentos** (archivos contiguos) y **4 workers**
+  (`multiprocessing.Pool`) corren el Map sobre ellos. Los 20 robots aparecen en los 8
+  fragmentos, así que el orden por `stream_seq` solo se recupera después del shuffle
+  (`hash(robot_id) % R`, con un hash determinista) y los reducers también corren en paralelo.
+  Los dos valores son parámetros: `ejecutar_pipeline(scans, n_fragmentos=8, workers=4)`.
+- **Resultado:** 10.000 tuplas del Map → 9.980 movimientos (10.000 scans − 20 robots, porque el
+  primer scan de cada robot no es la llegada de ningún movimiento) → **3.954 aristas** (Job 1);
+  7.908 tuplas del Map (2 por arista) → **100 nodos** (Job 2). El resumen por nodo se guarda
+  en `data/nodes.json`.
+- **Validación contra la Unit 3:** las aristas son idénticas a `construir_aristas` y a
+  `data/edges.json`; `in_move_count` coincide con `trafico_entrante`; la suma de `net_flow` es 0;
+  y `avg_quantity` y `low_stock_frac` coinciden con el promedio ponderado de las aristas (hasta
+  el redondeo de estas). El resultado es idéntico con 1, 2 y 4 workers y con 3, 8 y 16
+  fragmentos.
+- **Tiempos:** con 10.000 scans el pipeline en paralelo no es más rápido que el serial (el
+  arranque del Pool pesa más que el cómputo); el speedup y la eficiencia se miden en la Task 5.
+- **Funciones reutilizables:** `ejecutar_pipeline`, `job1`, `job2`, `validar_contra_unit3`,
+  `obtener_nodos`.
+- **Pruebas:** `python -m unittest tests.test_mapreduce_pipeline -v` (30 pruebas).
 
 La Task 2 agrupa los SKUs en **k=3 clusters** (S12 — K-Means) sobre tres características
 calculadas con un job de MapReduce sobre los scans crudos: `avg_quantity`, `low_stock_frac` y
@@ -490,6 +524,74 @@ SKU al centroide más cercano) + un Reduce (promediar los puntos de cada cluster
 - **Funciones reutilizables** (por ejemplo, para el dashboard): `agregar_por_sku`, `kmeans`,
   `caracterizar_clusters` y `etiquetar_clusters`.
 - **Pruebas:** `python -m unittest tests.test_mapreduce_algorithm -v`
+
+La Task 3 mide el **tamaño del shuffle** (lo que viaja de los mappers a los reducers) del
+pipeline de la Task 2, con y sin combiner, a 1x, 2x y 4x datos; comprueba si crece de forma lineal
+y lo extrapola a 10x, que después se contrasta con una corrida real a 10x.
+
+- **Qué se mide:** (1) el job de agregación por SKU: sin combiner viaja un registro por scan; con
+  combiner, cada map task suma localmente por `sku` y manda uno por SKU distinto de ese map task
+  (el Reduce solo suma, así que el combiner es válido y el resultado es idéntico). (2) Cada
+  iteración de K-Means, que trabaja sobre la tabla de SKUs: sin combiner viaja un registro por
+  punto; con combiner, a lo sumo una suma parcial por cluster y por map task (k registros por map
+  task). El shuffle se mide en registros y en bytes (JSON compacto, como en la Task 1 de la Unit 1).
+- **Datos:** 1x es el dataset de 10.000 scans; 2x, 4x y 10x son los primeros 20.000, 40.000 y
+  100.000 scans del mismo generador (el generador es secuencial: el 1x es exactamente
+  `data/dataset.json` y cada tamaño contiene al anterior). No se repite el dataset, porque un map
+  task vería SKUs repetidos de forma artificial y el combiner saldría favorecido.
+- **Map tasks:** fragmentos de 1.250 scans (10.000 / 8), así que hay 8, 16, 32 y 80 map tasks, como
+  los bloques de un sistema de archivos distribuido. K-Means reparte la tabla de SKUs en 8 map
+  tasks. Como variante, se repite la agregación con 8 map tasks fijos.
+- **Agregación por SKU:**
+
+  | Datos | Scans | Map tasks | Sin combiner | Con combiner | Ahorro |
+  | --- | ---: | ---: | ---: | ---: | ---: |
+  | 1x | 10.000 | 8 | 10.000 reg. (192,3 KiB) | 6.243 reg. (122,7 KiB) | 37,6 % |
+  | 2x | 20.000 | 16 | 20.000 reg. (384,5 KiB) | 12.449 reg. (244,7 KiB) | 37,8 % |
+  | 4x | 40.000 | 32 | 40.000 reg. (769,0 KiB) | 24.907 reg. (489,5 KiB) | 37,7 % |
+  | 10x (validación) | 100.000 | 80 | 100.000 reg. (1.922,3 KiB) | 62.198 reg. (1.222,3 KiB) | 37,8 % |
+
+- **K-Means, por iteración** (una corrida, semilla 42000; el número de iteraciones hasta converger
+  es 8, 10, 12 y 12):
+
+  | Datos | Puntos (SKUs) | Sin combiner | Con combiner |
+  | --- | ---: | ---: | ---: |
+  | 1x | 1.900 | 1.900 reg. (122,4 KiB) | 24 reg. (1,5 KiB) |
+  | 2x | 1.993 | 1.993 reg. (129,8 KiB) | 24 reg. (1,5 KiB) |
+  | 4x | 2.000 | 2.000 reg. (129,1 KiB) | 24 reg. (1,5 KiB) |
+  | 10x (validación) | 2.000 | 2.000 reg. (131,6 KiB) | 24 reg. (1,5 KiB) |
+
+- **Crecimiento lineal:** el shuffle de la agregación por SKU crece de forma **lineal** con los
+  datos, con y sin combiner. Sin combiner es exactamente un registro por scan (razones 2,00 y 4,00
+  contra 1x), y con combiner las razones son 1,99 y 3,99. La recta ajustada con 1x, 2x y 4x predice
+  100.000 registros a 10x sin combiner (medido: 100.000) y 62.238 con combiner (medido: 62.198, un
+  +0,1 %); en bytes, +0,0 % y +0,1 %. El ahorro del combiner es constante (≈ 37,7 %), porque cada
+  map task tiene siempre el mismo tamaño y ve la misma mezcla de SKUs.
+- **K-Means no crece con los scans, sino con los SKUs distintos:** sin combiner el shuffle por
+  iteración es un registro por SKU, y los SKUs distintos saturan en el catálogo de 2.000 (1.900,
+  1.993, 2.000, 2.000). Por eso es **casi constante** (razones 1,05 y 1,05) y la recta sobreestima
+  a 10x (2.187 predichos contra 2.000 medidos, +9,4 %). Con combiner es **constante**: 24 registros
+  por iteración (8 map tasks × 3 clusters), sin importar los datos: el combiner lo reduce un
+  98,7 % (1.900 → 24 registros, 122,4 → 1,5 KiB). Lo que sí cambia entre tamaños es el número de
+  iteraciones hasta converger, que depende de los datos y no sigue una ley simple.
+- **Pipeline completo (agregación + todas las iteraciones de K-Means), a 10x:** 124.000 registros
+  sin combiner y 62.482 con combiner (−49,6 %). A 1x el combiner ahorra un 74,5 % (25.200 → 6.435),
+  y el ahorro baja a medida que crecen los datos porque la agregación domina. Sin combiner el
+  pipeline crece de forma sublineal (razones 1,58 y 2,54) y la recta sobreestima a 10x (+13,9 %);
+  con combiner es lineal (+0,4 %).
+- **Variante con 8 map tasks fijos:** si el número de map tasks no crece con los datos, cada uno
+  recibe fragmentos más grandes, el combiner agrupa cada vez más scans del mismo SKU y el shuffle
+  crece de forma **sublineal**: 6.243, 9.541, 12.909 y 15.535 registros a 1x, 2x, 4x y 10x (ahorro de
+  37,6 % a 84,5 %). Aquí una recta ajustada con 1x, 2x y 4x predice 26.010 a 10x contra 15.535
+  medidos (+67 %): **la extrapolación lineal solo vale si el número de map tasks crece con los
+  datos**.
+- **Comprobaciones:** los SKUs agregados son idénticos con y sin combiner (y a los de la Task 2),
+  el K-Means instrumentado da exactamente las mismas asignaciones y centroides que el de la Task 2,
+  y los centroides calculados desde las sumas parciales del combiner coinciden (diferencia máxima
+  de 1,8e-15).
+- **Funciones reutilizables:** `ejecutar`, `agregacion_sku`, `kmeans_con_costo`, `ajuste_lineal`,
+  `clasificar_crecimiento` y `extrapolar`.
+- **Pruebas:** `python -m unittest tests.test_cost_analysis -v` (36 pruebas).
 
 La Task 4 simula en Python los dos jobs de MapReduce que construyen el grafo de movimientos
 (el de la Unit 3) y mide dos cosas de cada uno: la **replication rate** (r) y el **tamaño del
@@ -572,9 +674,92 @@ calcular el speedup `S_P = T_1/T_P` y la eficiencia `E_P = S_P/P`.
 
 | Tarea | Archivo | Comando |
 | --- | --- | --- |
+| Task 1 — Distance Measures | `unit5/DistanceMeasures.py` | `python unit5/DistanceMeasures.py` |
 | Task 2 — Cosine LSH with Random Hyperplanes | `unit5/CosineLSH.py` | `python unit5/CosineLSH.py` |
 | Task 3 — Shingling: Anchor-based Shingles | `unit5/AnchorShingles.py` | `python unit5/AnchorShingles.py` |
 | Task 4 — MinHash + Banding: Threshold Design | `unit5/MinHashBanding.py` | `python unit5/MinHashBanding.py` |
+
+La Task 1 compara **Jaccard, coseno, L1 y L2** (y la similitud LCS) sobre 1.000 chunks de robot con
+clusters plantados, representados como conjunto y como vector, y revisa si las distancias se
+concentran.
+
+- **Chunks:** 1.000 chunks sintéticos en 10 clusters plantados de 100 chunks (cada cluster sigue una
+  plantilla de barrido por pasillos, con ruido y omisiones: `generar_chunks` de la Task 3, semilla
+  42), con 28,5 bins en promedio. `avg_quantity` y `low_stock_frac` se miden sobre scans reales: por
+  cada bin que visita el chunk se toma al azar un scan real de ese bin. En este dataset el stock
+  depende del SKU y no del bin, así que esas dos métricas no traen información del cluster: son ruido.
+- **Conjunto:** shingles de k = 3 bins consecutivos (26,5 distintos por chunk; vocabulario de 6.977).
+  Se compara con **Jaccard**.
+- **Vector:** 102 dimensiones: la participación de cada uno de los 100 bins (cuenta del bin / largo de
+  la secuencia) más `avg_quantity` y `low_stock_frac` en z-score; es la misma representación de la
+  Task 2. Se compara con **coseno**, **L1** y **L2**.
+- **LCS:** longitud de la subsecuencia común más larga de las dos `bin_sequence`, dividida entre la
+  longitud de la más larga. A diferencia de Jaccard, respeta el orden de los bins.
+- **Pares:** 5.000 pares distintos al azar (507 del mismo cluster y 4.493 de clusters distintos). El AUC
+  es la probabilidad de que un par del mismo cluster salga más parecido que uno de clusters distintos.
+
+  | Medida | Media | Mismo cluster | Otro cluster | AUC |
+  | --- | ---: | ---: | ---: | ---: |
+  | Jaccard (shingles k = 3) | 0,033 | 0,274 | 0,006 | 1,000 |
+  | LCS (bin_sequence) | 0,240 | 0,756 | 0,182 | 1,000 |
+  | Coseno (102 dim) | 0,017 | 0,067 | 0,012 | 0,526 |
+  | L1 (102 dim) | 3,601 | 2,710 | 3,701 | 0,710 |
+  | L2 (102 dim) | 1,777 | 1,734 | 1,782 | 0,510 |
+  | Coseno (solo bins) | 0,350 | 0,787 | 0,300 | 1,000 |
+  | L1 (solo bins) | 1,319 | 0,462 | 1,416 | 1,000 |
+  | L2 (solo bins) | 0,217 | 0,125 | 0,228 | 1,000 |
+
+  Las distribuciones están en `data/distance_measures.png` (histogramas del mismo cluster contra
+  clusters distintos y la dispersión Jaccard contra LCS).
+- **Lectura de las distribuciones:** Jaccard y LCS separan los clusters sin errores. El coseno y L2
+  sobre los 102 dimensiones casi no los distinguen (AUC 0,53 y 0,51) y L1 solo en parte (0,71): las 2
+  métricas z-score, que son ruido, tienen norma media 1,23 contra 0,19 de la parte de bins, así que
+  dominan el vector (el coseno se parece al de un vector de 2 dimensiones, con picos en −1 y 1). Sin
+  ellas (filas "solo bins") las tres medidas separan perfectamente.
+- **Correlación en 500 pares** (53 del mismo cluster), Pearson / Spearman:
+
+  | Par de medidas | 500 pares al azar | 507 pares del mismo cluster |
+  | --- | ---: | ---: |
+  | Jaccard / LCS | 0,903 / 0,548 | 0,840 / 0,859 |
+  | Jaccard / coseno (102 dim) | 0,098 / 0,089 | 0,038 / 0,032 |
+  | LCS / coseno (102 dim) | 0,095 / 0,088 | 0,029 / 0,024 |
+  | Jaccard / coseno (solo bins) | 0,842 / 0,577 | 0,774 / 0,791 |
+  | LCS / coseno (solo bins) | 0,927 / 0,703 | 0,916 / 0,916 |
+
+  Jaccard y LCS están muy correlacionadas. En los pares al azar el Pearson (0,90) sale más alto que
+  el Spearman (0,55) porque hay dos nubes de puntos (pares de otro cluster, casi todos con Jaccard
+  cerca de 0, y pares del mismo cluster); dentro de un mismo cluster las dos coinciden en qué pares son
+  más parecidos (Spearman 0,86). El coseno de 102 dimensiones casi no se correlaciona con ninguna
+  (0,10), por lo de las métricas; el de solo bins sí (0,84 y 0,93).
+- **Concentración de las distancias:** coeficiente de variación (CV = desviación / media) y contraste
+  relativo ((máx − mín) / mín) sobre los 5.000 pares, y razón entre el vecino más cercano y el más
+  lejano (promedio de 50 chunks consultados); "NN mismo cl." es la fracción de consultas cuyo vecino
+  más cercano es del mismo cluster.
+
+  | Distancia | CV | Contraste | Más cercano / más lejano | NN mismo cl. |
+  | --- | ---: | ---: | ---: | ---: |
+  | L1 (102 dim) | 0,405 | 25,1 | 0,069 | 1,00 |
+  | L2 (102 dim) | 0,571 | 57,7 | 0,031 | 0,78 |
+  | 1 − coseno (102 dim) | 0,714 | 745,2 | 0,010 | 0,92 |
+  | L1 (solo bins) | 0,250 | 13,5 | 0,147 | 1,00 |
+  | L2 (solo bins) | 0,163 | 3,9 | 0,330 | 1,00 |
+  | 1 − coseno (solo bins) | 0,262 | 18,1 | 0,126 | 1,00 |
+
+  Con 102 dimensiones **no hay concentración fuerte**: el vecino más cercano está al 1–7 % de
+  distancia del más lejano. La más concentrada es L2 sobre solo bins (CV 0,16; el más cercano está al
+  33 % del más lejano), porque los pares de clusters distintos comparten pocos bins (Jaccard medio de
+  los conjuntos de bins: 0,18) y quedan a una distancia casi igual: 0,228 con desviación de 0,016
+  (CV 0,07); aun así separa perfectamente, porque los del mismo cluster están mucho más cerca (0,125). Es decir, que el coseno y
+  L2 de 102 dimensiones fallen no es concentración de distancias: están muy dispersas, pero esa
+  dispersión es ruido de las métricas. (El contraste de 1 − coseno es enorme porque el vecino más
+  cercano tiene coseno ≈ 1, o sea distancia ≈ 0.)
+- **Datos guardados:** `data/chunks.json` (1.000 chunks con los campos del template de datos de la
+  Unit 5: `robot_id`, `bin_sequence`, `seq_length`, `avg_quantity`, `low_stock_frac`, `shingle_count`
+  y `occupancy_vector`, más `cluster`; `minhash_signature` y `neighbors` los calculan otras tareas) y
+  `data/distance_measures.png`. Ambos se regeneran al correr el script (≈ 6 s).
+- **Funciones reutilizables:** `construir_chunks_plantados`, `construir_representaciones`,
+  `medir_pares`, `similitud_lcs`, `correlaciones` y `ejecutar`.
+- **Pruebas:** `python -m unittest tests.test_distance_measures -v` (43 pruebas).
 
 La Task 2 arma **firmas de hiperplano aleatorio** para buscar tramos de robot (robot
 chunks) parecidos sin comparar cada par contra todos los demas.
@@ -730,11 +915,14 @@ comparación teórica vs. empírica, capturas del dashboard y conclusiones)*
   - [x] Task 5 — Randomized 2-SAT
   - [X] Task 6 - Dashboard
 - [ ] Unit 4 — tareas
+  - [x] Task 1 — MapReduce Pipeline
   - [x] Task 2 — MapReduce Algorithm
+  - [x] Task 3 — Cost Analysis
   - [x] Task 4 — Reducer Size & Replication Rate
   - [x] Task 5 — Parallel Efficiency
   - [ ] Demás tareas
 - [ ] Unit 5 — tareas
+  - [x] Task 1 — Distance Measures
   - [x] Task 2 — Cosine LSH with Random Hyperplanes
   - [x] Task 3 — Shingling: Anchor-based Shingles
   - [x] Task 4 — MinHash + Banding: Threshold Design
